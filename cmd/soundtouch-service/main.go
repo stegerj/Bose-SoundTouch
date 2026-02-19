@@ -667,6 +667,17 @@ func setupRouter(server *handlers.Server) *chi.Mux {
 		r.Post("/error", server.HandleErrorStats)
 	})
 
+	r.Route("/mgmt", func(r chi.Router) {
+		r.Use(server.BasicAuthMgmt())
+		r.Get("/accounts/{accountId}/speakers", server.HandleMgmtListSpeakers)
+		r.Get("/devices/{deviceId}/events", server.HandleMgmtDeviceEvents)
+		r.Post("/spotify/init", server.HandleMgmtSpotifyInit)
+		r.Post("/spotify/confirm", server.HandleMgmtSpotifyConfirm)
+		r.Get("/spotify/accounts", server.HandleMgmtSpotifyAccounts)
+		r.Get("/spotify/token", server.HandleMgmtSpotifyToken)
+		r.Post("/spotify/entity", server.HandleMgmtSpotifyEntity)
+	})
+
 	r.Get("/proxy/*", server.HandleProxyRequest)
 
 	r.Route("/setup", func(r chi.Router) {
