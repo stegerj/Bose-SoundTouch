@@ -658,10 +658,10 @@ func setupRouter(server *handlers.Server) *chi.Mux {
 	})
 
 	r.Route("/mgmt", func(r chi.Router) {
-		// OAuth callback — no auth required (browser redirect from Spotify).
-		// The authorization code is single-use, short-lived, and useless without
-		// the client_secret (which only the server has).
-		r.Get("/spotify/confirm", server.HandleMgmtSpotifyConfirm)
+		// Browser OAuth callback — no auth required (Spotify redirects the
+		// user's browser here directly). The authorization code is single-use,
+		// short-lived, and useless without the client_secret.
+		r.Get("/spotify/callback", server.HandleMgmtSpotifyCallback)
 
 		// All other management endpoints require Basic Auth.
 		r.Group(func(r chi.Router) {
@@ -669,6 +669,7 @@ func setupRouter(server *handlers.Server) *chi.Mux {
 			r.Get("/accounts/{accountId}/speakers", server.HandleMgmtListSpeakers)
 			r.Get("/devices/{deviceId}/events", server.HandleMgmtDeviceEvents)
 			r.Post("/spotify/init", server.HandleMgmtSpotifyInit)
+			r.Post("/spotify/confirm", server.HandleMgmtSpotifyConfirm)
 			r.Get("/spotify/accounts", server.HandleMgmtSpotifyAccounts)
 			r.Get("/spotify/token", server.HandleMgmtSpotifyToken)
 			r.Post("/spotify/entity", server.HandleMgmtSpotifyEntity)

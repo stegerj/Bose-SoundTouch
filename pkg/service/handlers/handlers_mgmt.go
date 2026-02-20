@@ -103,7 +103,51 @@ func (s *Server) HandleMgmtSpotifyInit(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
+// HandleMgmtSpotifyCallback is the browser OAuth callback from Spotify.
+// Not protected by Basic Auth — Spotify redirects the user's browser here directly.
+// Returns an HTML page the user can close.
+func (s *Server) HandleMgmtSpotifyCallback(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	svc := s.spotifyService
+	s.mu.RUnlock()
+
+	if svc == nil {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`<html><body><h1>Error</h1><p>Spotify integration not configured</p></body></html>`))
+		return
+	}
+
+	if errMsg := r.URL.Query().Get("error"); errMsg != "" {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`<html><body><h1>Spotify Authorization Failed</h1><p>Error: ` + errMsg + `</p></body></html>`))
+		return
+	}
+
+	code := r.URL.Query().Get("code")
+	if code == "" {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`<html><body><h1>Missing authorization code</h1></body></html>`))
+		return
+	}
+
+	if err := svc.ExchangeCodeAndStore(code); err != nil {
+		log.Printf("[Mgmt] Spotify callback failed: %v", err)
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`<html><body><h1>Error</h1><p>Token exchange failed</p></body></html>`))
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html")
+	_, _ = w.Write([]byte(`<html><body><h1>Spotify Connected</h1><p>You can close this window.</p></body></html>`))
+}
+
 // HandleMgmtSpotifyConfirm exchanges an authorization code for tokens.
+// Used by the ueberboese mobile app after the deep link callback delivers the code.
+// Protected by Basic Auth.
 func (s *Server) HandleMgmtSpotifyConfirm(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	svc := s.spotifyService
