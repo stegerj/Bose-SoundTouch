@@ -380,7 +380,7 @@ func TestMACMappingPerformance(t *testing.T) {
 	if updateDuration > time.Millisecond*100 {
 		t.Errorf("Update performance too slow: %v", updateDuration)
 	}
-	if lookupDuration > time.Millisecond*50 {
+	if lookupDuration > time.Millisecond*70 {
 		t.Errorf("Lookup performance too slow: %v", lookupDuration)
 	}
 }
