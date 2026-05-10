@@ -28,7 +28,7 @@ set -euo pipefail
 # - Safe to re-run; it will update binary/config/unit and restart the service.
 # ==============================================================================
 
-VERSION="${1:-${VERSION:-v0.24.0}}"
+VERSION="${1:-${VERSION:-v0.74.0}}"
 # Normalize version prefix
 if [[ ! "$VERSION" =~ ^v ]]; then
   VERSION="v${VERSION}"
