@@ -329,7 +329,7 @@ func (m *Manager) GetMigrationSummary(deviceIP, targetURL, proxyURL string, opti
 	// 3. Provide HTTPS URL for testing (consumed by the migration UI)
 	summary.ServerHTTPSURL = m.buildServerHTTPSURL(targetURL)
 
-	// 6. Mirroring settings
+	// 4. Mirroring settings
 	if m.DataStore != nil {
 		settings, err := m.DataStore.GetSettings()
 		if err == nil {
@@ -340,19 +340,19 @@ func (m *Manager) GetMigrationSummary(deviceIP, targetURL, proxyURL string, opti
 		}
 	}
 
-	// 7. Merge telnet preflight results (started in parallel at the top).
+	// 5. Merge telnet preflight results (started in parallel at the top).
 	telnetResult := <-telnetCh
 	summary.TelnetReachable = telnetResult.TelnetReachable
 	summary.TelnetBanner = telnetResult.TelnetBanner
 	summary.TelnetVerifiedConfig = telnetResult.TelnetVerifiedConfig
 	summary.TelnetProbeError = telnetResult.TelnetProbeError
 
-	// 8. Check if migrated (must run after telnet results are merged so
+	// 6. Check if migrated (must run after telnet results are merged so
 	// TelnetVerifiedConfig is populated). XML/hosts/resolv axes use the
 	// probe data already gathered above.
 	m.checkIsMigratedFromProbe(summary, probe)
 
-	// 9. Cross-check SSH-XML and telnet-getpdo readings; surface any
+	// 7. Cross-check SSH-XML and telnet-getpdo readings; surface any
 	// divergence as a non-fatal warning.
 	m.crossCheckPreflights(summary)
 

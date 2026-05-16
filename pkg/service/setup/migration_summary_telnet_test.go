@@ -185,3 +185,56 @@ func TestGetMigrationSummary_TelnetSucceedsSSHSucceeds(t *testing.T) {
 		t.Errorf("TelnetVerifiedConfig = %q, want %q", summary.TelnetVerifiedConfig, target)
 	}
 }
+
+// TestGetMigrationSummary_TelnetOnlyMigrationDetected pins the ordering
+// bug fixed in PR #294 / issue #293.
+//
+// Before the fix, GetMigrationSummary called checkIsMigratedFromProbe
+// before draining the telnet goroutine's result, so
+// summary.TelnetVerifiedConfig was empty when isTelnetMigrated read it
+// — and the telnet axis was always reported false. For speakers
+// migrated *only* via telnet (envswitch flip; no SSH XML rewrite,
+// no DNS hook, no CA install), this misclassification meant
+// summary.IsMigrated was false despite the speaker actually pointing
+// at AfterTouch. The CLI's `setup verify` exited non-zero, and the
+// web UI rendered "Not Migrated".
+//
+// The fix moves m.checkIsMigratedFromProbe(summary, probe) to run
+// *after* the <-telnetCh drain, so TelnetVerifiedConfig is populated
+// when isTelnetMigrated inspects it.
+//
+// The scenario here matches foob61451's 2026-05-16 #293 reproducer:
+// SSH unavailable / disabled (every axis false), telnet getpdo reports
+// the AfterTouch host, no other migration path applied.
+func TestGetMigrationSummary_TelnetOnlyMigrationDetected(t *testing.T) {
+	target := "http://example:8000"
+	ft := &fakeTelnet{
+		banner: "BoseShell\n-> ",
+		responses: map[string]string{
+			"getpdo CurrentSystemConfiguration": "margeServerUrl=" + target + "\n",
+		},
+	}
+
+	m, host, cleanup := telnetSummaryEnv(t, nil, ft)
+	defer cleanup()
+
+	summary, err := m.GetMigrationSummary(host, "", "", nil)
+	if err != nil {
+		t.Fatalf("GetMigrationSummary: %v", err)
+	}
+
+	// Pre-condition for the test to be meaningful: the telnet probe
+	// must have populated TelnetVerifiedConfig. Without this, the
+	// downstream assertions could pass trivially.
+	if !strings.Contains(summary.TelnetVerifiedConfig, target) {
+		t.Fatalf("setup: TelnetVerifiedConfig = %q, want it to contain %q", summary.TelnetVerifiedConfig, target)
+	}
+
+	if !summary.TelnetMigrated {
+		t.Errorf("TelnetMigrated = false, want true — telnet getpdo reports %q which matches Manager.ServerURL host. Likely regression of PR #294 ordering fix in GetMigrationSummary.", target)
+	}
+
+	if !summary.IsMigrated {
+		t.Errorf("IsMigrated = false, want true — telnet axis should carry IsMigrated when SSH-driven axes are false. Likely regression of PR #294 ordering fix.")
+	}
+}
