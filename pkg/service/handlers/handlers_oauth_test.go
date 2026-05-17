@@ -84,33 +84,17 @@ func TestHandleBoseSpotifyToken_FallbackToProxy(t *testing.T) {
 	ds := datastore.NewDataStore(tmpDir)
 	server := NewServer(ds, nil, "http://localhost", false, false, false)
 
-	// chi.URLParam works when using chi router
 	r := chi.NewRouter()
 	r.Post("/oauth/device/{deviceID}/music/musicprovider/{sourceID}/token/cs3", server.HandleBoseToken)
 
-	// Since there's no Spotify service, it should fall back to HandleBoseProxy.
-	// HandleBoseProxy will try to contact streaming.bose.com.
-	// We can check if it returns a 502 or 404 (since we are not actually proxying to real Bose).
-
+	// Without a configured Spotify service, the handler returns 503.
 	req := httptest.NewRequest("POST", "/oauth/device/DEVICE123/music/musicprovider/15/token/cs3", nil)
-	req.Host = "localhost" // use localhost to avoid real network call
 	w := httptest.NewRecorder()
 
 	r.ServeHTTP(w, req)
 
-	// If it fell back to proxy, it should NOT have X-Proxy-Origin: self
-	if w.Header().Get("X-Proxy-Origin") == "self" {
-		t.Errorf("Expected fallback to proxy, but got X-Proxy-Origin: self")
-	}
-
-	// HandleBoseProxy sets X-Proxy-Origin: upstream
-	if w.Header().Get("X-Proxy-Origin") != "upstream" {
-		// It might fail before setting the header if the target host is invalid,
-		// but our HandleBoseProxy sets it in ModifyResponse.
-		// If it fails to connect, it might return 502 without the header.
-		if w.Code != http.StatusBadGateway && w.Code != http.StatusNotFound {
-			t.Errorf("Expected fallback to proxy (upstream), got status %d and origin %s", w.Code, w.Header().Get("X-Proxy-Origin"))
-		}
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503 without Spotify service, got %d", w.Code)
 	}
 }
 
@@ -260,14 +244,14 @@ func TestHandleBoseAmazonToken_FallbackToProxy(t *testing.T) {
 	r := chi.NewRouter()
 	r.Post("/oauth/device/{deviceID}/music/musicprovider/{sourceID}/token/cs1", server.HandleBoseToken)
 
+	// Without a configured Amazon service, the handler returns 503.
 	req := httptest.NewRequest("POST", "/oauth/device/DEVICE123/music/musicprovider/20/token/cs1", nil)
-	req.Host = "localhost"
 	w := httptest.NewRecorder()
 
 	r.ServeHTTP(w, req)
 
-	if w.Header().Get("X-Proxy-Origin") == "self" {
-		t.Error("Expected fallback to proxy, but got X-Proxy-Origin: self")
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503 without Amazon service, got %d", w.Code)
 	}
 }
 

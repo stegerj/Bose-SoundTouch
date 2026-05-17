@@ -1,12 +1,10 @@
 CONNECT  /core02/svc-bmx-adapter-siriusxm-everest-eco1/prod/live-adapter handlers.(*Server).HandleSiriusXMLiveAdapter-fm
 CONNECT  /core02/svc-bmx-adapter-siriusxm-everest-eco1/prod/live-adapter/* handlers.(*Server).HandleSiriusXMLiveAdapterSubpath-fm
-CONNECT  /oauth/*                                                     handlers.(*Server).HandleBoseProxy-fm
 DELETE   /accounts/{account}/devices/{device}                         handlers.(*Server).HandleMargeRemoveDevice-fm
 DELETE   /accounts/{account}/group/{groupId}                          handlers.(*Server).HandleMargeDeleteGroup-fm
 DELETE   /bmx/tunein/v1/favorite/{stationID}                          handlers.(*Server).HandleTuneInDeleteFavorite-fm
 DELETE   /core02/svc-bmx-adapter-siriusxm-everest-eco1/prod/live-adapter handlers.(*Server).HandleSiriusXMLiveAdapter-fm
 DELETE   /core02/svc-bmx-adapter-siriusxm-everest-eco1/prod/live-adapter/* handlers.(*Server).HandleSiriusXMLiveAdapterSubpath-fm
-DELETE   /oauth/*                                                     handlers.(*Server).HandleBoseProxy-fm
 DELETE   /setup/devices/{deviceId}                                    handlers.(*Server).HandleRemoveDevice-fm
 DELETE   /setup/dns-discoveries                                       handlers.(*Server).HandleClearDNSDiscoveries-fm
 DELETE   /setup/interactions/sessions                                 handlers.(*Server).HandleCleanupSessions-fm
@@ -53,8 +51,6 @@ GET      /mgmt/devices/{deviceId}/events                              handlers.(
 GET      /mgmt/spotify/accounts                                       handlers.(*Server).HandleMgmtSpotifyAccounts-fm
 GET      /mgmt/spotify/callback                                       handlers.(*Server).HandleMgmtSpotifyCallback-fm
 GET      /mgmt/spotify/token                                          handlers.(*Server).HandleMgmtSpotifyToken-fm
-GET      /oauth/*                                                     handlers.(*Server).HandleBoseProxy-fm
-GET      /proxy/*                                                     handlers.(*Server).HandleProxyRequest-fm
 GET      /setup/account-id-suggestions/{deviceId}                     handlers.(*Server).HandleAccountIDSuggestions-fm
 GET      /setup/ca.crt                                                handlers.(*Server).HandleGetCACert-fm
 GET      /setup/devices                                               handlers.(*Server).HandleListDiscoveredDevices-fm
@@ -95,13 +91,10 @@ GET      /v1/blacklist/{deviceId}                                     setupRoute
 GET      /web/*                                                       setupRouter.(*Server).HandleWeb
 HEAD     /core02/svc-bmx-adapter-siriusxm-everest-eco1/prod/live-adapter handlers.(*Server).HandleSiriusXMLiveAdapter-fm
 HEAD     /core02/svc-bmx-adapter-siriusxm-everest-eco1/prod/live-adapter/* handlers.(*Server).HandleSiriusXMLiveAdapterSubpath-fm
-HEAD     /oauth/*                                                     handlers.(*Server).HandleBoseProxy-fm
 OPTIONS  /core02/svc-bmx-adapter-siriusxm-everest-eco1/prod/live-adapter handlers.(*Server).HandleSiriusXMLiveAdapter-fm
 OPTIONS  /core02/svc-bmx-adapter-siriusxm-everest-eco1/prod/live-adapter/* handlers.(*Server).HandleSiriusXMLiveAdapterSubpath-fm
-OPTIONS  /oauth/*                                                     handlers.(*Server).HandleBoseProxy-fm
 PATCH    /core02/svc-bmx-adapter-siriusxm-everest-eco1/prod/live-adapter handlers.(*Server).HandleSiriusXMLiveAdapter-fm
 PATCH    /core02/svc-bmx-adapter-siriusxm-everest-eco1/prod/live-adapter/* handlers.(*Server).HandleSiriusXMLiveAdapterSubpath-fm
-PATCH    /oauth/*                                                     handlers.(*Server).HandleBoseProxy-fm
 POST     /accounts/{account}/devices                                  handlers.(*Server).HandleMargeAddDevice-fm
 POST     /accounts/{account}/devices/{device}/presets/{presetNumber}  handlers.(*Server).HandleMargeUpdatePreset-fm
 POST     /accounts/{account}/devices/{device}/recents                 handlers.(*Server).HandleMargeAddRecent-fm
@@ -126,7 +119,6 @@ POST     /mgmt/spotify/confirm                                        handlers.(
 POST     /mgmt/spotify/entity                                         handlers.(*Server).HandleMgmtSpotifyEntity-fm
 POST     /mgmt/spotify/init                                           handlers.(*Server).HandleMgmtSpotifyInit-fm
 POST     /mgmt/spotify/prime                                          handlers.(*Server).HandleMgmtPrimeDevice-fm
-POST     /oauth/*                                                     handlers.(*Server).HandleBoseProxy-fm
 POST     /oauth/account/{account}/music/musicprovider/{sourceID}/token/cs handlers.(*Server).HandleBoseAccountToken-fm
 POST     /oauth/device/{deviceID}/music/musicprovider/{sourceID}/token handlers.(*Server).HandleBoseLegacyToken-fm
 POST     /oauth/device/{deviceID}/music/musicprovider/{sourceID}/token/cs1 handlers.(*Server).HandleBoseToken-fm
@@ -169,9 +161,7 @@ POST     /v1/scmudc/{deviceId}                                        handlers.(
 POST     /v1/stapp/{deviceId}                                         handlers.(*Server).HandleAppEvents-fm
 PUT      /core02/svc-bmx-adapter-siriusxm-everest-eco1/prod/live-adapter handlers.(*Server).HandleSiriusXMLiveAdapter-fm
 PUT      /core02/svc-bmx-adapter-siriusxm-everest-eco1/prod/live-adapter/* handlers.(*Server).HandleSiriusXMLiveAdapterSubpath-fm
-PUT      /oauth/*                                                     handlers.(*Server).HandleBoseProxy-fm
 PUT      /streaming/account/{account}/device/{device}                 handlers.(*Server).HandleMargeUpdateDevice-fm
 PUT      /streaming/account/{account}/device/{device}/preset/{presetNumber} handlers.(*Server).HandleMargeUpdatePreset-fm
 TRACE    /core02/svc-bmx-adapter-siriusxm-everest-eco1/prod/live-adapter handlers.(*Server).HandleSiriusXMLiveAdapter-fm
 TRACE    /core02/svc-bmx-adapter-siriusxm-everest-eco1/prod/live-adapter/* handlers.(*Server).HandleSiriusXMLiveAdapterSubpath-fm
-TRACE    /oauth/*                                                     handlers.(*Server).HandleBoseProxy-fm

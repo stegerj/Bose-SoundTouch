@@ -2102,12 +2102,6 @@ type Settings struct {
 	AmazonClientSecret  string         `json:"amazon_client_secret,omitempty"`
 	AmazonRedirectURI   string         `json:"amazon_redirect_uri,omitempty"`
 
-	// AllowInsecureUpstreamTLS, when true, disables TLS certificate verification
-	// for the upstream Bose-cloud proxy traffic. The default (false)
-	// keeps verification on; opt in only when the upstream certificate chain is
-	// broken (post end-of-service) and a temporary unblock is required.
-	AllowInsecureUpstreamTLS bool `json:"allow_insecure_upstream_tls,omitempty"`
-
 	// TrustForwardedHeaders enables proxy-aware client IP resolution: when the
 	// immediate TCP peer is one of the TrustedProxyCIDRs, the X-Real-IP /
 	// X-Forwarded-For / True-Client-IP headers are honoured and replace

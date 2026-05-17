@@ -35,7 +35,8 @@ func (s *Server) HandleBoseToken(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	s.HandleBoseProxy(w, r)
+	log.Printf("[OAuth] Unknown music provider: %s", sourceID)
+	http.Error(w, "Unknown music provider", http.StatusNotFound)
 }
 
 // HandleBoseLegacyToken handles the Bose-specific token refresh request (legacy or variant).
@@ -111,16 +112,16 @@ func (s *Server) HandleBoseAmazonToken(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 
 	if svc == nil {
-		log.Printf("[Amazon] Amazon service not configured, falling back to upstream")
-		s.HandleBoseProxy(w, r)
+		log.Printf("[Amazon] Amazon service not configured, returning 503")
+		http.Error(w, "Amazon service not configured", http.StatusServiceUnavailable)
 
 		return
 	}
 
 	accounts := svc.GetAccounts()
 	if len(accounts) == 0 {
-		log.Printf("[Amazon] No Amazon accounts linked, falling back to upstream")
-		s.HandleBoseProxy(w, r)
+		log.Printf("[Amazon] No Amazon accounts linked, returning 503")
+		http.Error(w, "No linked Amazon accounts", http.StatusServiceUnavailable)
 
 		return
 	}
@@ -157,8 +158,8 @@ func (s *Server) HandleBoseAmazonToken(w http.ResponseWriter, r *http.Request) {
 
 	if account != nil {
 		if err := svc.RefreshAccessToken(account); err != nil {
-			log.Printf("[Amazon] Failed to refresh token for %s: %v. Falling back to upstream", account.UserID, err)
-			s.HandleBoseProxy(w, r)
+			log.Printf("[Amazon] Failed to refresh token for %s: %v. Returning 502", account.UserID, err)
+			http.Error(w, "Token refresh failed", http.StatusBadGateway)
 
 			return
 		}
@@ -169,8 +170,8 @@ func (s *Server) HandleBoseAmazonToken(w http.ResponseWriter, r *http.Request) {
 
 		accessToken, userID, err = svc.GetFreshToken()
 		if err != nil {
-			log.Printf("[Amazon] Failed to get fresh token: %v. Falling back to upstream", err)
-			s.HandleBoseProxy(w, r)
+			log.Printf("[Amazon] Failed to get fresh token: %v. Returning 502", err)
+			http.Error(w, "Failed to get fresh token", http.StatusBadGateway)
 
 			return
 		}
@@ -206,16 +207,16 @@ func (s *Server) HandleBoseSpotifyToken(w http.ResponseWriter, r *http.Request) 
 	s.mu.RUnlock()
 
 	if svc == nil {
-		log.Printf("[Spotify Proxy] Spotify service not configured, falling back to upstream")
-		s.HandleBoseProxy(w, r)
+		log.Printf("[Spotify Proxy] Spotify service not configured, returning 503")
+		http.Error(w, "Spotify service not configured", http.StatusServiceUnavailable)
 
 		return
 	}
 
 	accounts := svc.GetAccounts()
 	if len(accounts) == 0 {
-		log.Printf("[Spotify Proxy] No Spotify accounts linked, falling back to upstream")
-		s.HandleBoseProxy(w, r)
+		log.Printf("[Spotify Proxy] No Spotify accounts linked, returning 503")
+		http.Error(w, "No linked Spotify accounts", http.StatusServiceUnavailable)
 
 		return
 	}
@@ -256,8 +257,8 @@ func (s *Server) HandleBoseSpotifyToken(w http.ResponseWriter, r *http.Request) 
 
 	if account != nil {
 		if err := svc.RefreshAccessToken(account); err != nil {
-			log.Printf("[Spotify Proxy] Failed to refresh token for %s: %v. Falling back to upstream", account.UserID, err)
-			s.HandleBoseProxy(w, r)
+			log.Printf("[Spotify Proxy] Failed to refresh token for %s: %v. Returning 502", account.UserID, err)
+			http.Error(w, "Token refresh failed", http.StatusBadGateway)
 
 			return
 		}
@@ -269,8 +270,8 @@ func (s *Server) HandleBoseSpotifyToken(w http.ResponseWriter, r *http.Request) 
 
 		accessToken, userID, err = svc.GetFreshToken()
 		if err != nil {
-			log.Printf("[Spotify Proxy] Failed to get fresh token: %v. Falling back to upstream", err)
-			s.HandleBoseProxy(w, r)
+			log.Printf("[Spotify Proxy] Failed to get fresh token: %v. Returning 502", err)
+			http.Error(w, "Failed to get fresh token", http.StatusBadGateway)
 
 			return
 		}

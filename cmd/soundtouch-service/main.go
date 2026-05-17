@@ -1046,7 +1046,6 @@ func setupRouter(server *handlers.Server, stockholmHandler *stockholm.Handler) *
 		r.Post("/account/{account}/music/musicprovider/{sourceID}/token/cs", server.HandleBoseAccountToken)
 		r.Post("/device/{deviceID}/music/musicprovider/{sourceID}/token/cs1", server.HandleBoseToken)
 		r.Post("/device/{deviceID}/music/musicprovider/{sourceID}/token/cs3", server.HandleBoseToken)
-		r.HandleFunc("/*", server.HandleBoseProxy)
 	})
 
 	r.Route("/v1", func(r chi.Router) {
@@ -1097,8 +1096,6 @@ func setupRouter(server *handlers.Server, stockholmHandler *stockholm.Handler) *
 			r.Get("/devices/{deviceId}/events", server.HandleMgmtDeviceEvents)
 		})
 	})
-
-	r.Get("/proxy/*", server.HandleProxyRequest)
 
 	r.Route("/setup", func(r chi.Router) {
 		r.Get("/devices", server.HandleListDiscoveredDevices)

@@ -47,7 +47,6 @@ type Server struct {
 	shortcuts           map[string]int
 	recorder            *proxy.Recorder
 	dnsDiscovery        *discovery.DNSDiscovery
-	UpstreamProxy       http.Handler
 	Version             string
 	Commit              string
 	Date                string
