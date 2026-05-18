@@ -552,6 +552,7 @@ function selectMigrationDevice(deviceId) {
         }
         sel.value = "";
         document.getElementById("migration-summary").style.display = "none";
+        history.replaceState(null, '', '#tab-migration');
     }
 }
 
