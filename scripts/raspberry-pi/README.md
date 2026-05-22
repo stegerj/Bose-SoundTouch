@@ -28,7 +28,7 @@ You can override defaults:
 
 ```bash
 sudo \
-  VERSION=v0.89.0 \
+  VERSION=v0.91.0 \
   HOSTNAME_FQDN=soundtouch.local \
   HTTP_PORT=80 \
   HTTPS_PORT=443 \
