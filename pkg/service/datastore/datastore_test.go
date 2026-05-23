@@ -457,3 +457,40 @@ func TestSettingsPersistence(t *testing.T) {
 		t.Errorf("Expected DiscoveryEnabled %v, got %v", settings.DiscoveryEnabled, loaded.DiscoveryEnabled)
 	}
 }
+
+func TestMoveDeviceMigratesData(t *testing.T) {
+	tempDir := t.TempDir()
+	ds := NewDataStore(tempDir)
+
+	oldAccount := "default"
+	newAccount := "8637922"
+	deviceID := "F4E11E930BEB"
+
+	// Seed the device under the old account with presets
+	presets := []models.ServicePreset{
+		{ID: "1", ServiceContentItem: models.ServiceContentItem{Name: "Radio Preset", ContentItemType: "stationurl"}},
+	}
+	if err := ds.SavePresets(oldAccount, deviceID, presets); err != nil {
+		t.Fatalf("SavePresets under %s: %v", oldAccount, err)
+	}
+
+	// Move the device to the new account
+	if err := ds.MoveDevice(oldAccount, newAccount, deviceID); err != nil {
+		t.Fatalf("MoveDevice %s → %s: %v", oldAccount, newAccount, err)
+	}
+
+	// Verify presets survived the move under the new account
+	moved, err := ds.GetPresets(newAccount, deviceID)
+	if err != nil {
+		t.Fatalf("GetPresets under %s after move: %v", newAccount, err)
+	}
+	if len(moved) != 1 || moved[0].Name != "Radio Preset" {
+		t.Errorf("presets not preserved: got %+v", moved)
+	}
+
+	// Verify the old account no longer has the device
+	oldPresets, err := ds.GetPresets(oldAccount, deviceID)
+	if err == nil && len(oldPresets) > 0 {
+		t.Errorf("old account %s still has presets after move: %+v", oldAccount, oldPresets)
+	}
+}

@@ -1647,6 +1647,24 @@ func (ds *DataStore) RemoveDeviceDir(account, device string) error {
 	return ds.RemoveDevice(account, device)
 }
 
+// MoveDevice atomically moves a device directory from one account to another
+// on the same filesystem. If the target account directory doesn't exist it is
+// created. Returns an error if the rename fails (leaving the source intact).
+func (ds *DataStore) MoveDevice(oldAccount, newAccount, deviceID string) error {
+	ds.fileMutex.Lock()
+	defer ds.fileMutex.Unlock()
+
+	oldDir := ds.AccountDeviceDir(oldAccount, deviceID)
+	newDir := ds.AccountDeviceDir(newAccount, deviceID)
+
+	newAccountDir := filepath.Dir(newDir)
+	if err := ds.rootMkdirAll(newAccountDir, 0755); err != nil {
+		return err
+	}
+
+	return ds.rootRename(oldDir, newDir)
+}
+
 // DeduceSourceIDs updates the source IDs in the given slice by deducing them from recents and presets.
 func (ds *DataStore) DeduceSourceIDs(account, device string, sources []models.ConfiguredSource) {
 	// Deduce source IDs from recents and presets

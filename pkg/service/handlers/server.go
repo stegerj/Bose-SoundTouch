@@ -1058,19 +1058,12 @@ func (s *Server) handleDiscoveredDevice(d models.DiscoveredDevice) {
 	}
 
 	// If the speaker reports a paired account that differs from the stored
-	// location, clean up the stale entry so ListAllDevices doesn't return duplicates.
+	// location, migrate the device directory so ListAllDevices doesn't return duplicates.
 	if liveInfo.MargeAccountUUID != "" && storedAccount != "" && liveInfo.MargeAccountUUID != storedAccount {
-		// Preserve presets, recents and sources before cleaning up
-		if presets, err := s.ds.GetPresets(storedAccount, deviceID); err == nil && len(presets) > 0 {
-			_ = s.ds.SavePresets(liveInfo.MargeAccountUUID, deviceID, presets)
+		if err := s.ds.MoveDevice(storedAccount, accountID, deviceID); err != nil {
+			log.Printf("Failed to migrate device %s from %s to %s: %v",
+				deviceID, storedAccount, accountID, err)
 		}
-		if recents, err := s.ds.GetRecents(storedAccount, deviceID); err == nil && len(recents) > 0 {
-			_ = s.ds.SaveRecents(liveInfo.MargeAccountUUID, deviceID, recents)
-		}
-		if sources, err := s.ds.GetConfiguredSources(storedAccount, deviceID); err == nil && len(sources) > 0 {
-			_ = s.ds.SaveConfiguredSources(liveInfo.MargeAccountUUID, deviceID, sources)
-		}
-		s.ds.RemoveDevice(storedAccount, deviceID)
 	}
 
 	// 4. Get primary MAC address from networkInfo
