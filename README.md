@@ -15,6 +15,8 @@ Bose shut down SoundTouch cloud services on **May 6, 2026**. Presets, music serv
 
 See the [Survival Guide](https://gesellix.github.io/Bose-SoundTouch/docs/guides/SURVIVAL-GUIDE/) for the full picture.
 
+[![AfterTouch docs homepage](media/docs-homepage.png)](https://gesellix.github.io/Bose-SoundTouch/)
+
 ---
 
 ## Tools
