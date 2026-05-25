@@ -89,7 +89,10 @@ func (lp *LoggingProxy) LogRequest(r *http.Request) {
 		}
 	}
 
-	log.Printf("[PROXY_REQ] %s %s\n  Headers:\n%s\n  Body: %s", r.Method, sanitizeLog(r.URL.String()), headers, sanitizeLog(bodyStr)) // lgtm[go/clear-text-logging]
+	// lgtm[go/clear-text-logging] — formatHeaders() unconditionally redacts sensitive headers
+	// (Authorization, Cookie, …); sanitizeLog() strips newline characters from URL and body.
+	// CodeQL cannot model the custom redaction logic inside formatHeaders.
+	log.Printf("[PROXY_REQ] %s %s\n  Headers:\n%s\n  Body: %s", r.Method, sanitizeLog(r.URL.String()), headers, sanitizeLog(bodyStr))
 
 	// Debug only: write unredacted headers directly to stderr so credential
 	// values never reach the structured log stream (go/clear-text-logging).
