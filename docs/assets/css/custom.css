@@ -1,9 +1,16 @@
+/* Font paths use ../../fonts/ (two levels up) so the URL resolves correctly
+   regardless of where the CSS is served from:
+   - dev:        /css/custom.css          → ../../fonts/ → /fonts/
+   - production: /css/compiled/main.css   → ../../fonts/ → /fonts/
+   - GH Pages:   /Bose-SoundTouch/css/compiled/main.css
+                                          → ../../fonts/ → /Bose-SoundTouch/fonts/ */
+
 @font-face {
   font-family: 'Noto Sans';
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url('../fonts/noto-sans-v42-latin-regular.woff2') format('woff2');
+  src: url('../../fonts/noto-sans-v42-latin-regular.woff2') format('woff2');
 }
 
 @font-face {
@@ -11,7 +18,7 @@
   font-style: italic;
   font-weight: 400;
   font-display: swap;
-  src: url('../fonts/noto-sans-v42-latin-italic.woff2') format('woff2');
+  src: url('../../fonts/noto-sans-v42-latin-italic.woff2') format('woff2');
 }
 
 @font-face {
@@ -19,7 +26,7 @@
   font-style: normal;
   font-weight: 700;
   font-display: swap;
-  src: url('../fonts/noto-sans-v42-latin-700.woff2') format('woff2');
+  src: url('../../fonts/noto-sans-v42-latin-700.woff2') format('woff2');
 }
 
 @font-face {
@@ -27,7 +34,7 @@
   font-style: italic;
   font-weight: 700;
   font-display: swap;
-  src: url('../fonts/noto-sans-v42-latin-700italic.woff2') format('woff2');
+  src: url('../../fonts/noto-sans-v42-latin-700italic.woff2') format('woff2');
 }
 
 :root {
