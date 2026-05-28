@@ -2,7 +2,7 @@ module navigation-station-demo
 
 go 1.26.3
 
-require github.com/gesellix/bose-soundtouch v0.98.0
+require github.com/gesellix/bose-soundtouch v0.99.0
 
 require github.com/gorilla/websocket v1.5.3 // indirect
 

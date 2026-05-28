@@ -26,7 +26,7 @@ Override defaults at install time:
 
 ```bash
 sudo \
-  VERSION=v0.98.0 \
+  VERSION=v0.99.0 \
   HOSTNAME_FQDN=soundtouch.local \
   HTTP_PORT=80 \
   HTTPS_PORT=443 \
@@ -116,7 +116,7 @@ Override defaults at install time:
 
 ```bash
 sudo \
-  VERSION=v0.98.0 \
+  VERSION=v0.99.0 \
   HTTP_PORT=8081 \
   bash install-web.sh
 ```

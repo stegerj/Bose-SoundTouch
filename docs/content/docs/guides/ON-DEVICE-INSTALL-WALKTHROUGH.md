@@ -88,10 +88,10 @@ To target a specific version instead of the default:
 
 ```bash
 # Via environment variable (works with pipe-to-sh)
-VERSION=0.98.0 rw && curl -sSL https://raw.githubusercontent.com/gesellix/Bose-SoundTouch/main/scripts/on-device-install/install.sh | sh
+VERSION=0.99.0 rw && curl -sSL https://raw.githubusercontent.com/gesellix/Bose-SoundTouch/main/scripts/on-device-install/install.sh | sh
 
 # Via command-line flag (pass args after sh -s --)
-curl -sSL https://raw.githubusercontent.com/gesellix/Bose-SoundTouch/main/scripts/on-device-install/install.sh | sh -s -- --version 0.98.0
+curl -sSL https://raw.githubusercontent.com/gesellix/Bose-SoundTouch/main/scripts/on-device-install/install.sh | sh -s -- --version 0.99.0
 ```
 
 Verify the installed version:
@@ -100,7 +100,7 @@ Verify the installed version:
 wget -qO- http://localhost:8000/health
 ```
 
-The JSON response should include `"version":"v0.98.0"` (or whichever
+The JSON response should include `"version":"v0.99.0"` (or whichever
 version you installed).
 
 ---
@@ -188,13 +188,13 @@ next reboot — which is fine for a one-time setup run):
 cd /tmp
 
 curl -L --fail -o soundtouch-cli \
-  https://github.com/gesellix/Bose-SoundTouch/releases/download/v0.98.0/soundtouch-cli-v0.98.0-linux-armv7
+  https://github.com/gesellix/Bose-SoundTouch/releases/download/v0.99.0/soundtouch-cli-v0.99.0-linux-armv7
 chmod +x soundtouch-cli
 
 /tmp/soundtouch-cli --version
 ```
 
-Replace `v0.98.0` with the version you installed.
+Replace `v0.99.0` with the version you installed.
 
 ---
 
