@@ -10,9 +10,6 @@ by [weissigera](https://github.com/weissigera) in
 [issue #329](https://github.com/gesellix/Bose-SoundTouch/issues/329#issuecomment-4521280831),
 documenting a successful fresh installation on a SoundTouch 20 Series I.
 
-For the installer reference and troubleshooting tips see
-[scripts/on-device-install/README.md](https://github.com/gesellix/Bose-SoundTouch/blob/main/scripts/on-device-install/README.md).
-
 ---
 
 ## Prerequisites
@@ -292,6 +289,72 @@ should start playing the corresponding stream.
 | `http://localhost:8000` not responding after install | `logread \| grep aftertouch \| tail -20`            |
 | No space left on device during install               | Run the cleanup in Step 2; check `df -h /mnt/nv`    |
 
-For more detail on any of these, see
-[TROUBLESHOOTING.md](./TROUBLESHOOTING.md) and the
-[on-device installer README](https://github.com/gesellix/Bose-SoundTouch/blob/main/scripts/on-device-install/README.md).
+For more detail see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
+
+---
+
+## Updating AfterTouch
+
+Re-run the installer with the version you want. The script backs up the
+running binary (named after its version), installs the new one, and prunes
+older artefacts to keep `/mnt/nv` free:
+
+```bash
+# Update to latest release
+rw && curl -sSL https://raw.githubusercontent.com/gesellix/Bose-SoundTouch/main/scripts/on-device-install/install.sh | sh
+
+# Update to a specific version — three equivalent forms
+VERSION=0.99.0 rw && curl -sSL https://raw.githubusercontent.com/gesellix/Bose-SoundTouch/main/scripts/on-device-install/install.sh | sh
+
+rw && curl -sSL https://raw.githubusercontent.com/gesellix/Bose-SoundTouch/main/scripts/on-device-install/install.sh | sh -s -- --version 0.99.0
+
+curl -sSLo install.sh https://raw.githubusercontent.com/gesellix/Bose-SoundTouch/main/scripts/on-device-install/install.sh
+sh install.sh --version 0.99.0
+```
+
+**Rollback:** the installer keeps a `.backup` file alongside the binary:
+
+```bash
+ls /mnt/nv/aftertouch/aftertouch-service*.backup
+cp /mnt/nv/aftertouch/aftertouch-service.<old-version>.backup \
+   /mnt/nv/aftertouch/aftertouch-service
+/etc/init.d/aftertouch restart
+```
+
+---
+
+## Service management
+
+```bash
+/etc/init.d/aftertouch start
+/etc/init.d/aftertouch stop
+/etc/init.d/aftertouch restart
+/etc/init.d/aftertouch status   # distinguishes "running + listener up" from "PID alive but listener down"
+```
+
+---
+
+## Logs
+
+The daemon writes to BusyBox syslog (tagged `aftertouch`). Disk usage stays
+bounded — the syslog ring buffer is in memory:
+
+```bash
+logread        | grep aftertouch | tail -20   # recent entries
+logread -f     | grep aftertouch              # live tail
+```
+
+If the service is running but port 8000 isn't responding, check the syslog
+tail first — panics and startup errors appear there.
+
+---
+
+## Uninstalling
+
+Before uninstalling, consider reverting the speaker migration from the
+AfterTouch Admin UI so the speaker URL is set back to the Bose cloud (though
+neither Bose nor AfterTouch will be reachable once both are removed).
+
+```bash
+curl -sSL https://raw.githubusercontent.com/gesellix/Bose-SoundTouch/main/scripts/on-device-install/uninstall.sh | sh
+```

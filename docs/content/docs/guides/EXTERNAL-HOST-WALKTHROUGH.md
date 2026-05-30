@@ -170,14 +170,35 @@ curl -s http://192.0.2.1:8090/sources
 ### Via soundtouch-web
 
 The Radio Browser, TuneIn tabs, and preset saving live in
-**soundtouch-web**, a separate binary from the service. Run it on your
-host and open **`http://<host-ip>:8080`** in your browser (default port
-8080).
+**soundtouch-web**, a separate binary from the service. Once running,
+open **`http://<host-ip>:8080`** in your browser (default port 8080).
 
-> **Raspberry Pi note:** The Raspberry Pi installer (`install.sh`) only
-> installs `soundtouch-service`. Download `soundtouch-web` separately from
-> the [Releases page](https://github.com/gesellix/Bose-SoundTouch/releases)
-> and start it alongside the service.
+### Installing soundtouch-web on a Raspberry Pi
+
+`install.sh` only installs `soundtouch-service`. Use the dedicated
+`install-web.sh` script to add soundtouch-web:
+
+```bash
+curl -fsSL -o install-web.sh \
+  https://raw.githubusercontent.com/gesellix/Bose-SoundTouch/main/scripts/raspberry-pi/install-web.sh
+sudo bash install-web.sh
+```
+
+For configuration, service management, updates, and removal see the
+[Raspberry Pi guide → soundtouch-web](RASPBERRY-PI.md#soundtouch-web).
+
+### Installing soundtouch-web on other hosts
+
+Download the binary for your OS and architecture from the
+[Releases page](https://github.com/gesellix/Bose-SoundTouch/releases)
+and run it directly:
+
+```bash
+./soundtouch-web --port 8080
+```
+
+Or install it as a systemd service following the same unit-file pattern
+described in [DEPLOYMENT.md](DEPLOYMENT.md).
 
 soundtouch-web provides two ways to save what's currently playing to a
 preset slot:

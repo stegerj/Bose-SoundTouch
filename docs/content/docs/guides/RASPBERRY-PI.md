@@ -1,38 +1,43 @@
 ---
 title: "Raspberry Pi Installation Guide"
 ---
-This guide explains how to install the `soundtouch-service` as a persistent systemd service on a Raspberry Pi (tested on Raspberry Pi Zero 2W, 3, and 4).
+How to install and manage AfterTouch on a Raspberry Pi (or any always-on Linux
+host) using the provided installer scripts.
 
-For a complete walkthrough — from install through speaker migration and preset setup — see
+Two scripts are available, one per binary:
+
+| Script           | Binary               | Role                               | Default port |
+|------------------|----------------------|------------------------------------|--------------|
+| `install.sh`     | `soundtouch-service` | Cloud-replacement relay — always-on | 80 / 443     |
+| `install-web.sh` | `soundtouch-web`     | Browser control panel              | 8080         |
+
+Both auto-detect CPU architecture (armv7 / arm64 / amd64), create a `soundtouch`
+system user, and install a systemd unit. They are safe to re-run for updates.
+
+For a complete install-through-migration walkthrough see
 [EXTERNAL-HOST-WALKTHROUGH.md](EXTERNAL-HOST-WALKTHROUGH.md).
 Not sure whether to use a Pi or run AfterTouch on the speaker itself? See
 [DEPLOYMENT-OVERVIEW.md](DEPLOYMENT-OVERVIEW.md).
 
-## Automated Installer
+---
 
-We provide a specialized installer script located in the `scripts/raspberry-pi/` directory of the repository.
+## soundtouch-service
 
-### Features
-*   **Automatic start on boot**: Installs a systemd unit.
-*   **Non-root operation**: Uses `AmbientCapabilities` to bind to ports 80/443 without root privileges.
-*   **Arch Detection**: Automatically selects the correct binary for `armv7`, `arm64`, or `amd64`.
-*   **Easy Updates**: Re-running the script updates the binary to the latest version.
+### Installation
 
-### Installation Steps
+```bash
+curl -fsSL -o install.sh \
+  https://raw.githubusercontent.com/gesellix/Bose-SoundTouch/main/scripts/raspberry-pi/install.sh
+sudo bash install.sh
+```
 
-1.  **Download the installer**:
-    ```bash
-    curl -fsSL -o install.sh https://raw.githubusercontent.com/gesellix/bose-soundtouch/main/scripts/raspberry-pi/install.sh
-    ```
+Install a specific version:
 
-2.  **Run with sudo**:
-    ```bash
-    sudo bash install.sh
-    ```
+```bash
+sudo bash install.sh v0.99.0
+```
 
-### Overriding Defaults
-
-You can customize the installation using environment variables:
+Override defaults at install time:
 
 ```bash
 sudo \
@@ -43,33 +48,205 @@ sudo \
   bash install.sh
 ```
 
-### Updating the Service
+### Configuration
 
-To update the service to a specific version, run the installer with the version as an argument:
-
-```bash
-sudo bash install.sh v0.99.0
+```
+/etc/soundtouch-service/soundtouch-service.env
 ```
 
-The installer will automatically fetch the latest version of itself for that release and then update the service binary and restart it.
-
-## Management
-
-Once installed, use standard `systemctl` commands to manage the service:
+Example:
 
 ```bash
-# Check status
-systemctl status soundtouch-service
+PORT=80
+HTTPS_PORT=443
+DATA_DIR=/var/lib/soundtouch-service
 
-# Follow logs
-journalctl -u soundtouch-service -f
+LOG_PROXY_BODY=false
+REDACT_PROXY_LOGS=true
+RECORD_INTERACTIONS=true
+DISCOVERY_INTERVAL=5m
 
-# Restart
+SERVER_URL=http://soundtouch.local
+HTTPS_SERVER_URL=https://soundtouch.local
+```
+
+After editing the env file:
+
+```bash
 sudo systemctl restart soundtouch-service
 ```
 
-## Configuration
+### Service management
 
-Configuration is stored in `/etc/soundtouch-service/soundtouch-service.env`. Note that settings saved via the Web UI (in `settings.json`) will take precedence over these environment variables once the service is running.
+```bash
+systemctl status soundtouch-service
+sudo systemctl enable soundtouch-service   # start on boot
+sudo systemctl disable soundtouch-service
+sudo systemctl stop soundtouch-service
+sudo systemctl start soundtouch-service
+sudo systemctl restart soundtouch-service
+```
 
-For more details, see the [scripts/raspberry-pi/README.md](https://github.com/gesellix/Bose-SoundTouch/blob/main/scripts/raspberry-pi/README.md) in the repository.
+### Logs
+
+```bash
+journalctl -u soundtouch-service -e --no-pager   # recent
+journalctl -u soundtouch-service -f               # follow live
+journalctl -u soundtouch-service -b               # this boot only
+```
+
+### Updates
+
+```bash
+sudo bash install.sh              # update to latest release
+sudo bash install.sh v0.99.0     # update to a specific version
+```
+
+The script stops the service, downloads the new binary (backs up the old one to
+`.old`), and restarts automatically. Your env file and data directory are preserved.
+
+### Removal
+
+```bash
+sudo systemctl disable --now soundtouch-service
+sudo rm /etc/systemd/system/soundtouch-service.service
+sudo rm -rf /etc/soundtouch-service
+sudo rm -rf /var/lib/soundtouch-service
+sudo rm /usr/local/bin/soundtouch-service
+sudo systemctl daemon-reload
+```
+
+---
+
+## soundtouch-web
+
+`soundtouch-web` is a stateless browser control panel — it holds no persistent
+data and can be stopped or restarted at any time without data loss.
+
+### Installation
+
+```bash
+curl -fsSL -o install-web.sh \
+  https://raw.githubusercontent.com/gesellix/Bose-SoundTouch/main/scripts/raspberry-pi/install-web.sh
+sudo bash install-web.sh
+```
+
+Install a specific version:
+
+```bash
+sudo bash install-web.sh v0.99.0
+```
+
+Override defaults at install time:
+
+```bash
+sudo \
+  VERSION=v0.99.0 \
+  HTTP_PORT=8081 \
+  bash install-web.sh
+```
+
+Once running, open **`http://<pi-ip>:8080`** in a browser.
+
+### Configuration
+
+```
+/etc/soundtouch-web/soundtouch-web.env
+```
+
+Example:
+
+```bash
+PORT=8080
+BIND_ADDR=
+DISCOVERY_INTERFACE=
+SOUNDTOUCH_DEVICES=
+```
+
+`SOUNDTOUCH_DEVICES` accepts a comma-separated list of IP addresses for manual
+device registration — useful when mDNS auto-discovery is unreliable on your
+network:
+
+```bash
+SOUNDTOUCH_DEVICES=192.0.2.1,192.0.2.2
+```
+
+After editing the env file:
+
+```bash
+sudo systemctl restart soundtouch-web
+```
+
+### Port conflicts
+
+Port 8080 is a common default for other services. To check what is already
+using it:
+
+```bash
+sudo ss -tulpn | grep :8080
+```
+
+To use a different port, pass `HTTP_PORT=<port>` to the installer, or edit
+the env file after installation and restart the service.
+
+### Service management
+
+```bash
+systemctl status soundtouch-web
+sudo systemctl enable soundtouch-web    # start on boot
+sudo systemctl disable soundtouch-web
+sudo systemctl stop soundtouch-web
+sudo systemctl start soundtouch-web
+sudo systemctl restart soundtouch-web
+```
+
+### Logs
+
+```bash
+journalctl -u soundtouch-web -e --no-pager
+journalctl -u soundtouch-web -f
+```
+
+### Updates
+
+```bash
+sudo bash install-web.sh              # update to latest release
+sudo bash install-web.sh v0.99.0     # update to a specific version
+```
+
+### Removal
+
+```bash
+sudo systemctl disable --now soundtouch-web
+sudo rm /etc/systemd/system/soundtouch-web.service
+sudo rm -rf /etc/soundtouch-web
+sudo rm /usr/local/bin/soundtouch-web
+sudo systemctl daemon-reload
+```
+
+---
+
+## Architecture auto-detection
+
+Both installers detect the CPU and pick the matching release asset automatically:
+
+| `uname -m`          | asset suffix  |
+|---------------------|---------------|
+| `aarch64`           | `linux-arm64` |
+| `armv7l` / `armv6l` | `linux-armv7` |
+| `x86_64`            | `linux-amd64` |
+
+Override if needed:
+
+```bash
+sudo ARCH_ASSET=linux-arm64 bash install.sh
+sudo ARCH_ASSET=linux-arm64 bash install-web.sh
+```
+
+---
+
+## Security
+
+Both services run as the `soundtouch` system user (no login shell, no home
+directory). `soundtouch-service` additionally uses
+`AmbientCapabilities=CAP_NET_BIND_SERVICE` to bind ports 80 / 443 without root.
