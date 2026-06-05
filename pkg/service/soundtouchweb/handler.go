@@ -11,6 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"io"
 
 	"github.com/gesellix/bose-soundtouch/pkg/models"
 	bmxpkg "github.com/gesellix/bose-soundtouch/pkg/service/bmx"
@@ -1373,14 +1374,59 @@ func (app *WebApp) HandlePlayDeezer(w http.ResponseWriter, r *http.Request) {
 		boseType = "artistradio"
 	}
 
-	fmt.Printf("DEBUG PLAY DEEZER -> Location: %s | Type: %s | Name: %s\n", locationStr, boseType, req.Name)
+	// 1. Interroga l'endpoint nativo della cassa fisica tramite una chiamata HTTP diretta a /sources
+	sourceAccount := ""
+	deviceIP := device.DeviceInfo.IPAddress
+	sourcesURL := fmt.Sprintf("http://%s:8090/sources", deviceIP)
+
+	respSources, err := http.Get(sourcesURL)
+	if err == nil {
+		defer respSources.Body.Close()
+
+		// Struttura per decodificare l'XML reale inviato dal firmware Bose
+		type SourceItemXml struct {
+			Source        string `xml:"source,attr"`
+			SourceAccount string `xml:"sourceAccount,attr"`
+		}
+
+		// Decodifica l'XML usando il decoder locale per non dipendere da import globali
+		// (In Go possiamo usare json o xml direttamente se non ridefinito, ma usiamo json.NewDecoder se risponde JSON)
+		// Nota: Per tagliare la testa al toro con l'errore 'undefined: xml', decodifichiamo manualmente via JSON
+		// se la cassa supporta la doppia risposta, oppure usiamo un trucco di parsing stringa velocissimo ed esente da import:
+
+		buf := new(strings.Builder)
+		_, _ = io.Copy(buf, respSources.Body)
+		xmlStr := buf.String()
+
+		// Cerchiamo la riga di Deezer nell'XML tramite manipolazione di stringa stringa (zero import richiesti!)
+		if strings.Contains(xmlStr, `source="DEEZER"`) {
+			parts := strings.Split(xmlStr, `source="DEEZER"`)
+			if len(parts) > 1 {
+				subParts := strings.Split(parts[1], `sourceAccount="`)
+				if len(subParts) > 1 {
+					emailParts := strings.Split(subParts[1], `"`)
+					if len(emailParts) > 0 {
+						sourceAccount = emailParts[0]
+					}
+				}
+			}
+		}
+	}
+
+	// 2. Se l'account non viene trovato (Deezer non collegato sulla cassa), blocca in sicurezza
+	if sourceAccount == "" {
+		app.sendError(w, "Deezer account not found on this Bose SoundTouch device. Please link your account in the official Bose app.", http.StatusBadRequest)
+		return
+	}
+
+//	fmt.Printf("DEBUG PLAY DEEZER FINAL -> Location: %s | Type: %s | Account: %s\n", locationStr, boseType, sourceAccount)
 
 	contentItem := &models.ContentItem{
 		Source:        "DEEZER",
 		Type:          boseType,
 		Location:      locationStr,
 		ItemName:      req.Name,
-		SourceAccount: "johannesteger@gmail.com",
+		SourceAccount: sourceAccount,
 		IsPresetable:  true,
 	}
 
