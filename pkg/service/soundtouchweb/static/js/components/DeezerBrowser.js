@@ -13,8 +13,72 @@ export function DeezerBrowser({ devices }) {
     const [statusMessage, setStatusMessage] = useState('');
     const [pendingPlay, setPendingPlay] = useState(null);
 
+    // Protezione centralizzata per evitare il crash di Preact all'avvio
+    const deviceEntries = Object.entries(devices || {}).filter(([id, dev]) => id && dev);
+
+    // Funzione intelligente unica per gestire il play istantaneo o l'apertura del popup originale
+    async function triggerPlay(item) {
+        if (!item) return;
+
+        // CASO 1: SE È UN ARTISTA -> Recuperiamo i brani della sua radio dal backend Go e prendiamo il primo
+        if (item.type === 'artist') {
+            setLoading(true);
+            setStatusMessage(`Loading radio for ${item.name}...`);
+            try {
+                // Chiamiamo il nuovo endpoint Go creato via api.js
+                const response = await api.deezerArtistRadio(item.id);
+                const radioTracks = response?.data || response;
+
+                 // Dentro il blocco dell'artista in triggerPlay, assicurati che estragga l'indice 0:
+                if (radioTracks && Array.isArray(radioTracks) && radioTracks.length > 0) {
+                 const firstTrack = radioTracks[0]; // <-- Deve prendere l'indice 0 dell'array!
+                 item = {
+                     id: String(firstTrack.id),
+                     name: firstTrack.title,
+                     type: 'track'
+                 };
+               } else {
+                    setStatusMessage(`No tracks found for ${item.name}'s radio.`);
+                    setLoading(false);
+                    return;
+                }
+            } catch (err) {
+                console.error("Failed to load artist radio via backend Go:", err);
+                setStatusMessage(`Error loading radio for ${item.name}.`);
+                setLoading(false);
+                return;
+            }
+        }
+
+        // CASO 2 E 3: ALBUM O TRACK (O L'ARTISTA TRASFORMATO IN TRACK)
+        // Se c'è un solo dispositivo reale attivo, invia il play direttamente e salta il popup
+        if (deviceEntries.length === 1) {
+            // FIXED: Estrae il primo elemento (l'ID/IP stringa) dal primo sotto-array di deviceEntries
+            const [[singleDeviceId]] = deviceEntries;
+            setLoading(true);
+
+            try {
+                await api.deezerPlay(singleDeviceId, {
+                    location: String(item.id),
+                    type: item.type,
+                    itemName: item.name || item.title // Coerente con la struct del backend Go
+                });
+            } catch (err) {
+                console.error("Immediate playback failed:", err);
+            } finally {
+                setLoading(false);
+            }
+
+        } else {
+            // Se ci sono più dispositivi, imposta lo stato per aprire il popup classico centrato
+            setPendingPlay(item);
+            setLoading(false);
+        }
+    }
+
+
     async function search(q, type) {
-        if (!q.trim()) return;
+        if (!q || !q.trim()) return;
         setLoading(true);
         setStatusMessage('Searching Deezer library...');
         setSections([]);
@@ -23,9 +87,9 @@ export function DeezerBrowser({ devices }) {
             const result = await api.deezerSearch(q, type);
             setLoading(false);
 
-            const itemsList = result?.data || result;
+            const itemsList = result?.data || result?.Data || result;
 
-            if (!itemsList || itemsList.length === 0) {
+            if (!itemsList || !Array.isArray(itemsList) || itemsList.length === 0) {
                 setStatusMessage('No results found matching your request.');
                 return;
             }
@@ -40,19 +104,18 @@ export function DeezerBrowser({ devices }) {
         }
     }
 
-    // Funzione ausiliaria aggiornata per filtrare gli artisti senza album
     function mapAndSetItems(itemsList, defaultType, sectionName) {
-        // 1. Filtriamo la lista originale prima di mappare gli elementi
+        if (!Array.isArray(itemsList)) return;
+
         const filteredList = itemsList.filter(item => {
+            if (!item) return false;
             const actualType = item.type || defaultType;
-            // Se l'elemento è un artista ed ha 0 album, lo scartiamo (restituisce false)
             if (actualType === 'artist' && item.nb_album === 0) {
                 return false;
             }
             return true;
         });
 
-        // 2. Mappiamo solo gli elementi rimasti dopo il filtro
         setSections([{
             name: sectionName,
             items: filteredList.map(item => {
@@ -62,16 +125,16 @@ export function DeezerBrowser({ devices }) {
                 const actualType = item.type || defaultType;
 
                 if (actualType === 'album') {
-                    imageUrl = item.cover_medium || item.cover_small;
-                    name = item.title;
+                    imageUrl = item.cover_medium || item.cover_small || '';
+                    name = item.title || '';
                     subtitle = item.artist ? item.artist.name : '';
                 } else if (actualType === 'artist') {
-                    imageUrl = item.picture_medium || item.picture_small;
-                    name = item.name;
+                    imageUrl = item.picture_medium || item.picture_small || '';
+                    name = item.name || '';
                     subtitle = item.nb_album !== undefined ? `${item.nb_album} Albums` : 'Artist';
                 } else if (actualType === 'track') {
                     imageUrl = item.album ? (item.album.cover_medium || item.album.cover_small) : '';
-                    name = item.title;
+                    name = item.title || '';
                     subtitle = item.artist ? item.artist.name : '';
                 }
 
@@ -86,63 +149,6 @@ export function DeezerBrowser({ devices }) {
         }]);
     }
 
-    async function handleItemSelection(item) {
-        if (item.type === 'artist') {
-            setLoading(true);
-            setStatusMessage(`Loading discography for ${item.name}...`);
-            setSections([]);
-            try {
-                const response = await api.deezerArtistDetails(item.id);
-                setLoading(false);
-
-                const artistData = response?.data || response;
-
-                if (!artistData || (!artistData.albums && !artistData.tracks)) {
-                    setStatusMessage('No items found for this artist.');
-                    return;
-                }
-
-                setStatusMessage(`Discography for ${item.name}:`);
-
-                const newSections = [];
-
-                if (artistData.albums && artistData.albums.length > 0) {
-                    newSections.push({
-                        name: 'Albums',
-                        items: artistData.albums.map(a => ({
-                            id: a.id,
-                            name: a.title,
-                            subtitle: 'Album',
-                            imageUrl: a.cover_medium || a.cover_small,
-                            type: 'album'
-                        }))
-                    });
-                }
-
-                if (artistData.tracks && artistData.tracks.length > 0) {
-                    newSections.push({
-                        name: 'Top Tracks',
-                        items: artistData.tracks.map(t => ({
-                            id: t.id,
-                            name: t.title,
-                            subtitle: 'Track',
-                            imageUrl: t.album ? (t.album.cover_medium || t.album.cover_small) : '',
-                            type: 'track'
-                        }))
-                    });
-                }
-
-                setSections(newSections);
-            } catch (err) {
-                console.error("Failed to fetch artist details:", err);
-                setLoading(false);
-                setStatusMessage('Error fetching details for this artist.');
-            }
-        } else {
-            setPendingPlay(item);
-        }
-    }
-
     async function playOn(deviceId) {
         if (!pendingPlay) return;
         setLoading(true);
@@ -151,7 +157,7 @@ export function DeezerBrowser({ devices }) {
             await api.deezerPlay(deviceId, {
                 location: String(pendingPlay.id),
                 type: pendingPlay.type,
-                name: pendingPlay.name
+                itemName: pendingPlay.name || pendingPlay.title // Coerente con la struct del backend Go
             });
         } catch (err) {
             console.error("Failed to play on speaker:", err);
@@ -160,8 +166,6 @@ export function DeezerBrowser({ devices }) {
         setLoading(false);
         setPendingPlay(null);
     }
-
-    const deviceEntries = Object.entries(devices);
 
     return html`
         <div class="tunein-browser deezer-browser">
@@ -200,48 +204,201 @@ export function DeezerBrowser({ devices }) {
                 <div>
                     ${section.name ? html`<h4 class="tunein-section-name">${section.name}</h4>` : null}
                     <ul class="tunein-list">
-                        ${section.items.map((item, i) => html`
-                            <li key=${item.id || i} class="tunein-item" onClick=${() => handleItemSelection(item)}>
-                                ${item.imageUrl ? html`<img class="tunein-thumb" src=${item.imageUrl} alt="" />` : null}
-                                <div class="tunein-item-info">
-                                    <span class="tunein-item-name">${item.name}</span>
-                                    ${item.subtitle ? html`<span class="tunein-item-desc">${item.subtitle}</span>` : null}
-                                </div>
-                                <button
-                                    class="tunein-play-btn"
-                                    title=${item.type === 'artist' ? 'View Discography' : 'Play'}
-                                    onClick=${(e) => {
-                                        e.stopPropagation();
-                                        handleItemSelection(item);
-                                    }}
-                                >
-                                    ${item.type === 'artist' ? '👁' : '▶'}
-                                </button>
-                            </li>
-                        `)}
+                        ${section.items.map((item, i) => {
+                            if (item.type === 'artist') {
+                                return html`<${ArtistAccordionItem} key=${item.id || i} item=${item} setPendingPlay=${triggerPlay} />`;
+                            } else if (item.type === 'album') {
+                                return html`<${AlbumAccordionItem} key=${item.id || i} item=${item} setPendingPlay=${triggerPlay} />`;
+                            } else {
+                                return html`
+                                    <li class="tunein-item" onClick=${() => triggerPlay(item)}>
+                                        ${item.imageUrl ? html`<img class="tunein-thumb" src=${item.imageUrl} alt="" />` : null}
+                                        <div class="tunein-item-info">
+                                            <div class="tunein-item-title">${item.name}</div>
+                                            <div class="tunein-item-desc">${item.subtitle}</div>
+                                        </div>
+                                    </li>
+                                `;
+                            }
+                        })}
                     </ul>
                 </div>
             `)}
 
-            ${pendingPlay ? html`
-                <div class="overlay" onClick=${() => setPendingPlay(null)}>
-                    <div class="device-picker" onClick=${(e) => e.stopPropagation()}>
-                        <h3 class="picker-title">Play on device</h3>
-                        <p class="picker-item-name">${pendingPlay.name}</p>
-                        <div class="picker-devices">
-                            ${deviceEntries.length === 0 ? html`<p class="picker-no-devices">No devices found. Try discovering first.</p>` : null}
-                            ${deviceEntries.map(([id, d]) => html`
-                                <button class="picker-device-btn" key=${id} onClick=${() => playOn(id)}>
-                                    <div class="picker-device-info">
-                                        <span class="picker-device-name">${d.info?.name || id}</span>
-                                        <span class="picker-device-ip">${d.info?.ip_address || ''}</span>
-                                    </div>
-                                </button>
-                            `)}
-                        </div>
+             ${pendingPlay ? html`
+                 <div class="overlay" onClick=${() => setPendingPlay(null)}>
+                     <div class="device-picker" onClick=${(e) => e.stopPropagation()}>
+                         <h3 class="picker-title">Play on device</h3>
+                         <p class="picker-item-name">${pendingPlay.name}</p>
+                         <div class="picker-devices">
+                             ${deviceEntries.length === 0 ? html`<p class="picker-no-devices">No devices found. Try discovering first.</p>` : null}
+                             ${deviceEntries.map(([id, d]) => html`
+                                 <button class="picker-device-btn" key=${id} onClick=${() => playOn(id)}>
+                                     <div class="picker-device-info">
+                                         <span class="picker-device-name">${d.DeviceInfo?.Name || d.info?.name || id}</span>
+                                         <span class="picker-device-ip">${d.DeviceInfo?.IPAddress || d.info?.ip_address || ''}</span>
+                                     </div>
+                                 </button>
+                             `)}
+                         </div>
+                     </div>
+                 </div>
+             ` : null}
+        </div>
+    `;
+}
+
+// ============================================================================
+// INCOLLA QUESTO IN FONDO AL FILE DEEZERBROWSER.JS PER RISOLVERE L'ERRORE
+// ============================================================================
+
+function ArtistAccordionItem({ item, setPendingPlay }) {
+    const [isOpen, setIsOpen] = useState(false);
+    const [details, setDetails] = useState({ albums: [], tracks: [] });
+    const [localLoading, setLocalLoading] = useState(false);
+
+    async function toggleArtist(e) {
+        if (e) e.stopPropagation();
+        const nextState = !isOpen;
+        setIsOpen(nextState);
+
+        if (nextState && details.albums.length === 0 && details.tracks.length === 0) {
+            setLocalLoading(true);
+            try {
+                const response = await api.deezerArtistDetails(item.id);
+                const artistData = response?.data || response;
+                if (artistData) {
+                    setDetails({
+                        albums: artistData.albums || [],
+                        tracks: artistData.tracks || []
+                    });
+                }
+            } catch (err) {
+                console.error("Failed to load artist details inside accordion:", err);
+            } finally {
+                setLocalLoading(false);
+            }
+        }
+    }
+
+    return html`
+        <li class="tunein-item accordion-item" style=${{ flexDirection: 'column', alignItems: 'stretch' }}>
+            <div style=${{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                <div onClick=${toggleArtist} style=${{ display: 'flex', alignItems: 'center', flexGrow: 1, cursor: 'pointer' }}>
+                    ${item.imageUrl ? html`<img class="tunein-thumb" src=${item.imageUrl} alt="" style=${{ borderRadius: '50%' }} />` : null}
+                    <div class="tunein-item-info">
+                        <div class="tunein-item-title">${item.name} <span style=${{ fontSize: '12px', marginLeft: '6px' }}>${isOpen ? '▲' : '▼'}</span></div>
+                        <div class="tunein-item-desc">${item.subtitle}</div>
                     </div>
                 </div>
+                <button class="btn-secondary" style=${{ height: '30px', padding: '0 8px', fontSize: '12px' }}
+                        onClick=${(e) => { e.stopPropagation(); setPendingPlay(item); }}>
+                    ▶ Radio
+                </button>
+            </div>
+
+            ${isOpen ? html`
+                <div class="accordion-content" style=${{ paddingLeft: '24px', marginTop: '8px', borderLeft: '2px solid #ddd', width: '100%' }}>
+                    ${localLoading ? html`<div class="tunein-item-desc">Loading discography...</div>` : null}
+
+                    ${details.tracks.length > 0 ? html`
+                        <div style=${{ marginBottom: '12px' }}>
+                            <div class="tunein-section-name" style=${{ fontSize: '13px', margin: '4px 0', textTransform: 'uppercase' }}>Top Tracks</div>
+                            <ul style=${{ listStyle: 'none', padding: 0, margin: 0 }}>
+                                ${details.tracks.map(t => {
+                                    const trackImg = t.album ? (t.album.cover_medium || t.album.cover_small) : item.imageUrl;
+                                    return html`
+                                        <li key=${t.id} class="tunein-item" style=${{ padding: '6px 0', borderBottom: '1px solid #eee' }}
+                                            onClick=${(e) => { e.stopPropagation(); setPendingPlay({ id: t.id, name: t.title, imageUrl: trackImg, type: 'track' }); }}>
+                                            <div class="tunein-item-info">
+                                                <div class="tunein-item-title" style=${{ fontSize: '14px' }}>🎵 ${t.title}</div>
+                                            </div>
+                                        </li>
+                                    `;
+                                })}
+                            </ul>
+                        </div>
+                    ` : null}
+
+                    ${details.albums.length > 0 ? html`
+                        <div>
+                            <div class="tunein-section-name" style=${{ fontSize: '13px', margin: '4px 0', textTransform: 'uppercase' }}>Albums (${details.albums.length})</div>
+                            <ul style=${{ listStyle: 'none', padding: 0, margin: 0 }}>
+                                ${details.albums.map(a => html`
+                                    <${AlbumAccordionItem}
+                                        key=${a.id}
+                                        item=${{ id: a.id, name: a.title, imageUrl: a.cover_medium || a.cover_small, subtitle: 'Album', type: 'album' }}
+                                        setPendingPlay=${setPendingPlay}
+                                    />
+                                `)}
+                            </ul>
+                        </div>
+                    ` : null}
+                </div>
             ` : null}
-        </div>
+        </li>
+    `;
+}
+
+function AlbumAccordionItem({ item, setPendingPlay }) {
+    const [isOpen, setIsOpen] = useState(false);
+    const [tracks, setTracks] = useState([]);
+    const [localLoading, setLocalLoading] = useState(false);
+
+    async function toggleAlbum(e) {
+        if (e) e.stopPropagation();
+        const nextState = !isOpen;
+        setIsOpen(nextState);
+
+        if (nextState && tracks.length === 0) {
+            setLocalLoading(true);
+            try {
+                const response = await api.deezerAlbumTracks(item.id);
+                const tracksData = response?.data || response;
+                if (tracksData) {
+                    setTracks(tracksData);
+                }
+            } catch (err) {
+                console.error("Failed to load album tracks inside accordion:", err);
+            } finally {
+                setLocalLoading(false);
+            }
+        }
+    }
+
+    return html`
+        <li class="tunein-item accordion-item" style=${{ flexDirection: 'column', alignItems: 'stretch', padding: '8px 0', borderBottom: '1px solid #f0f0f0' }}>
+            <div style=${{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                <div onClick=${toggleAlbum} style=${{ display: 'flex', alignItems: 'center', flexGrow: 1, cursor: 'pointer' }}>
+                    ${item.imageUrl ? html`<img class="tunein-thumb" src=${item.imageUrl} alt="" style=${{ width: '34px', height: '34px' }} />` : null}
+                    <div class="tunein-item-info">
+                        <div class="tunein-item-title" style=${{ fontSize: '14px' }}>${item.name} <span style=${{ fontSize: '11px', marginLeft: '4px' }}>${isOpen ? '▲' : '▼'}</span></div>
+                        <div class="tunein-item-desc" style=${{ fontSize: '12px' }}>${item.subtitle}</div>
+                    </div>
+                </div>
+                <button class="btn-secondary" style=${{ height: '26px', padding: '0 6px', fontSize: '11px' }}
+                        onClick=${(e) => { e.stopPropagation(); setPendingPlay(item); }}>
+                    ▶ Album
+                </button>
+            </div>
+
+            ${isOpen ? html`
+                <div class="accordion-content" style=${{ paddingLeft: '16px', marginTop: '6px', borderLeft: '2px dashed #ccc', width: '100%' }}>
+                    ${localLoading ? html`<div class="tunein-item-desc" style=${{ fontSize: '12px' }}>Loading tracks...</div>` : null}
+                    <ul style=${{ listStyle: 'none', padding: 0, margin: 0 }}>
+                        ${tracks.map((t, index) => html`
+                            <li key=${t.id} class="tunein-item" style=${{ padding: '4px 0', borderBottom: '1px solid #f9f9f9', minHeight: 'auto' }}
+                                onClick=${(e) => { e.stopPropagation(); setPendingPlay({ id: t.id, name: t.title, imageUrl: item.imageUrl, type: 'track' }); }}>
+                                <div class="tunein-item-info">
+                                    <div class="tunein-item-title" style=${{ fontSize: '13px', fontWeight: 'normal' }}>
+                                        <span style=${{ color: '#888', marginRight: '6px' }}>${index + 1}.</span> ${t.title}
+                                    </div>
+                                </div>
+                            </li>
+                        `)}
+                    </ul>
+                </div>
+            ` : null}
+        </li>
     `;
 }

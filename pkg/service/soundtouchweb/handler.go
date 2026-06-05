@@ -1331,7 +1331,6 @@ func (app *WebApp) HandleDeezerSearch(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: rawItems})
 }
 
-
 // HandlePlayDeezer plays a Deezer track, album, or artist on a specific SoundTouch device.
 func (app *WebApp) HandlePlayDeezer(w http.ResponseWriter, r *http.Request) {
 	device, exists := app.GetDevice(chi.URLParam(r, "id"))
@@ -1383,22 +1382,11 @@ func (app *WebApp) HandlePlayDeezer(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		defer respSources.Body.Close()
 
-		// Struttura per decodificare l'XML reale inviato dal firmware Bose
-		type SourceItemXml struct {
-			Source        string `xml:"source,attr"`
-			SourceAccount string `xml:"sourceAccount,attr"`
-		}
-
-		// Decodifica l'XML usando il decoder locale per non dipendere da import globali
-		// (In Go possiamo usare json o xml direttamente se non ridefinito, ma usiamo json.NewDecoder se risponde JSON)
-		// Nota: Per tagliare la testa al toro con l'errore 'undefined: xml', decodifichiamo manualmente via JSON
-		// se la cassa supporta la doppia risposta, oppure usiamo un trucco di parsing stringa velocissimo ed esente da import:
-
 		buf := new(strings.Builder)
 		_, _ = io.Copy(buf, respSources.Body)
 		xmlStr := buf.String()
 
-		// Cerchiamo la riga di Deezer nell'XML tramite manipolazione di stringa stringa (zero import richiesti!)
+		// Cerchiamo la riga di Deezer nell'XML tramite manipolazione di stringa (zero import richiesti!)
 		if strings.Contains(xmlStr, `source="DEEZER"`) {
 			parts := strings.Split(xmlStr, `source="DEEZER"`)
 			if len(parts) > 1 {
@@ -1419,8 +1407,6 @@ func (app *WebApp) HandlePlayDeezer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-//	fmt.Printf("DEBUG PLAY DEEZER FINAL -> Location: %s | Type: %s | Account: %s\n", locationStr, boseType, sourceAccount)
-
 	contentItem := &models.ContentItem{
 		Source:        "DEEZER",
 		Type:          boseType,
@@ -1440,7 +1426,7 @@ func (app *WebApp) HandlePlayDeezer(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: map[string]string{"message": "Playing " + req.Name}})
 }
 
-// HandleDeezerArtistDetails recupera album e tracce principali di un artista specifico
+// HandleDeezerArtistDetails recupera album (paginati completi) e tracce principali di un artista specifico
 func (app *WebApp) HandleDeezerArtistDetails(w http.ResponseWriter, r *http.Request) {
 	artistID := chi.URLParam(r, "artistId")
 	if artistID == "" {
@@ -1450,7 +1436,7 @@ func (app *WebApp) HandleDeezerArtistDetails(w http.ResponseWriter, r *http.Requ
 
 	println("Richiesta dettagli discografia Deezer per Artista ID:", artistID)
 
-	// 1. Interroga il pacchetto bmxpkg per gli Album dell'artista
+	// 1. Interroga il pacchetto bmxpkg per gli Album dell'artista (Usa la nuova funzione ciclica/paginata)
 	albumsData, err := bmxpkg.DeezerArtistAlbums(artistID)
 	if err != nil {
 		app.sendError(w, err.Error(), http.StatusInternalServerError)
@@ -1498,5 +1484,84 @@ func (app *WebApp) HandleDeezerArtistDetails(w http.ResponseWriter, r *http.Requ
 			"albums": formattedAlbums,
 			"tracks": formattedTracks,
 		},
+	})
+}
+
+// HandleDeezerArtistRadio recupera ed estrae la prima traccia della radio di un artista
+func (app *WebApp) HandleDeezerArtistRadio(w http.ResponseWriter, r *http.Request) {
+	artistID := chi.URLParam(r, "artistId")
+	if artistID == "" {
+		app.sendError(w, "artistId parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	println("Richiesta tracce Radio Deezer per Artista ID:", artistID)
+
+	// 1. Interroga il pacchetto bmxpkg per la Radio dell'artista
+	radioData, err := bmxpkg.DeezerArtistRadio(artistID)
+	if err != nil {
+		app.sendError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if len(radioData.Data) == 0 {
+		app.sendError(w, "No tracks found in this artist radio", http.StatusNotFound)
+		return
+	}
+
+	// 2. Mappa l'output delle tracce della radio esattamente con lo stesso stile
+	var formattedTracks []map[string]interface{}
+	for _, track := range radioData.Data {
+		formattedTracks = append(formattedTracks, map[string]interface{}{
+			"id":    track.ID,
+			"title": track.Title,
+			"album": map[string]string{
+				"cover_small":  track.Album.CoverSmall,
+				"cover_medium": track.Album.CoverMed,
+			},
+			"type":  "track", // Forza il tipo su track per farlo digerire a Bose
+		})
+	}
+
+	// Invia la risposta al frontend Preact (restituiamo l'array pulito)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{
+		Success: true,
+		Data:    formattedTracks, // Contiene la lista delle canzoni della radio
+	})
+}
+
+// HandleDeezerAlbumTracks recupera la lista delle singole tracce di un determinato album
+func (app *WebApp) HandleDeezerAlbumTracks(w http.ResponseWriter, r *http.Request) {
+	albumID := chi.URLParam(r, "albumId")
+	if albumID == "" {
+		app.sendError(w, "albumId parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	println("Richiesta tracce per Album ID:", albumID)
+
+	// Interroga il pacchetto bmxpkg per recuperare l'array delle tracce dell'album
+	tracksData, err := bmxpkg.DeezerAlbumTracks(albumID)
+	if err != nil {
+		app.sendError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Mappa l'output per il frontend per garantire uniformità strutturale
+	var formattedTracks []map[string]interface{}
+	for _, track := range tracksData.Data {
+		formattedTracks = append(formattedTracks, map[string]interface{}{
+			"id":       track.ID,
+			"title":    track.Title,
+			"duration": track.Duration,
+			"type":     "track",
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{
+		Success: true,
+		Data:    formattedTracks,
 	})
 }
