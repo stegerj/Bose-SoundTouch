@@ -10,6 +10,7 @@ import { Zone } from './components/Zone.js';
 import { Recents } from './components/Recents.js';
 import { TuneInBrowser } from './components/TuneInBrowser.js';
 import { RadioBrowser } from './components/RadioBrowser.js';
+import { DeezerBrowser } from './components/DeezerBrowser.js';
 import { PlayURL } from './components/PlayURL.js';
 import { TTS } from './components/TTS.js';
 import { api } from './api.js';
@@ -75,6 +76,7 @@ function App() {
         }
         if (page === 'tunein') return 'TuneIn';
         if (page === 'radiobrowser') return 'RadioBrowser';
+        if (page === 'deezer') return 'Deezer';
         if (page === 'playurl') return 'Play URL';
         if (page === 'tts') return 'TTS';
         return 'AfterTouch';
@@ -178,6 +180,12 @@ function App() {
                     >
                         <img src="/static/img/radiobrowser-mono.svg" alt="RadioBrowser" class="nav-rb-icon" />
                     </a>
+                    <a href="#" class="${page === 'deezer' ? 'active' : ''}"
+                        onClick=${(e) => { e.preventDefault(); navigate('deezer'); }}
+                        title="Deezer"
+                    >
+                        <img src="/static/img/Heart-icon.png" alt="Deezer" class="nav-rb-icon" />
+                    </a>
                     <a href="#" class="${page === 'playurl' ? 'active' : ''}"
                         onClick=${(e) => { e.preventDefault(); navigate('playurl'); }}
                         title="Play URL"
@@ -221,6 +229,8 @@ function App() {
                     <${TuneInBrowser} key="tunein-browser" devices=${devices} />
                 ` : page === 'radiobrowser' ? html`
                     <${RadioBrowser} key="radiobrowser-browser" devices=${devices} />
+                ` : page === 'deezer' ? html`
+                    <${DeezerBrowser} key="deezer-browser" devices=${devices} />
                 ` : page === 'playurl' ? html`
                     <${PlayURL} key="play-url" devices=${devices} serverServiceUrl=${version?.service_url || ''} />
                 ` : page === 'tts' ? html`

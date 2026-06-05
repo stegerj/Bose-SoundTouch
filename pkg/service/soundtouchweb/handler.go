@@ -1303,3 +1303,154 @@ func (app *WebApp) HandlePlayTuneIn(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
 }
+
+// HandleDeezerSearch handles Deezer search requests.
+func (app *WebApp) HandleDeezerSearch(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query().Get("q")
+
+	// Estrae il tipo dal percorso dell'URL (es. /search/album)
+	searchType := chi.URLParam(r, "type")
+
+	// Stampa i parametri ricevuti nel terminale del server per il debugging
+	println("Deezer Search Request -> Query:", query, "| Type:", searchType)
+
+	if query == "" {
+		app.sendError(w, "query parameter 'q' is required", http.StatusBadRequest)
+		return
+	}
+
+	// Interroga l'API tramite bmxpkg
+	rawItems, err := bmxpkg.DeezerSearch(query, searchType)
+	if err != nil {
+		app.sendError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: rawItems})
+}
+
+
+// HandlePlayDeezer plays a Deezer track, album, or artist on a specific SoundTouch device.
+func (app *WebApp) HandlePlayDeezer(w http.ResponseWriter, r *http.Request) {
+	device, exists := app.GetDevice(chi.URLParam(r, "id"))
+	if !exists {
+		app.sendError(w, "Device not found", http.StatusNotFound)
+		return
+	}
+	defer r.Body.Close()
+
+	var req struct {
+		Location json.RawMessage `json:"location"`
+		Name     string          `json:"itemName"`
+		Type     string          `json:"type"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		app.sendError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	var locationStr string
+	if len(req.Location) > 0 {
+		locationStr = string(req.Location)
+		if len(locationStr) > 1 && locationStr[0] == '"' && locationStr[len(locationStr)-1] == '"' {
+			locationStr = locationStr[1 : len(locationStr)-1]
+		}
+	}
+
+	if locationStr == "" {
+		app.sendError(w, "Location/ID is required", http.StatusBadRequest)
+		return
+	}
+
+	boseType := req.Type
+	if boseType == "" {
+		boseType = "album"
+	}
+
+	if boseType == "artist" {
+		boseType = "artistradio"
+	}
+
+	fmt.Printf("DEBUG PLAY DEEZER -> Location: %s | Type: %s | Name: %s\n", locationStr, boseType, req.Name)
+
+	contentItem := &models.ContentItem{
+		Source:        "DEEZER",
+		Type:          boseType,
+		Location:      locationStr,
+		ItemName:      req.Name,
+		SourceAccount: "johannesteger@gmail.com",
+		IsPresetable:  true,
+	}
+
+	if err := device.Client.SelectContentItem(contentItem); err != nil {
+		fmt.Printf("ERRORE BOSE SELECT: %v\n", err)
+		app.sendError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: map[string]string{"message": "Playing " + req.Name}})
+}
+
+// HandleDeezerArtistDetails recupera album e tracce principali di un artista specifico
+func (app *WebApp) HandleDeezerArtistDetails(w http.ResponseWriter, r *http.Request) {
+	artistID := chi.URLParam(r, "artistId")
+	if artistID == "" {
+		app.sendError(w, "artistId parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	println("Richiesta dettagli discografia Deezer per Artista ID:", artistID)
+
+	// 1. Interroga il pacchetto bmxpkg per gli Album dell'artista
+	albumsData, err := bmxpkg.DeezerArtistAlbums(artistID)
+	if err != nil {
+		app.sendError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// 2. Interroga il pacchetto bmxpkg per le Tracce Top dell'artista
+	tracksData, err := bmxpkg.DeezerArtistTopTracks(artistID)
+	if err != nil {
+		app.sendError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// 3. Mappa l'output degli album estratti per il componente JS
+	var formattedAlbums []map[string]interface{}
+	for _, album := range albumsData.Data {
+		formattedAlbums = append(formattedAlbums, map[string]interface{}{
+			"id":           album.ID,
+			"title":        album.Title,
+			"cover_small":  album.CoverSmall,
+			"cover_medium": album.CoverMed,
+			"type":         "album",
+		})
+	}
+
+	// 4. Mappa l'output delle tracce estratte per il componente JS
+	var formattedTracks []map[string]interface{}
+	for _, track := range tracksData.Data {
+		formattedTracks = append(formattedTracks, map[string]interface{}{
+			"id":    track.ID,
+			"title": track.Title,
+			"album": map[string]string{
+				"cover_small":  track.Album.CoverSmall,
+				"cover_medium": track.Album.CoverMed,
+			},
+			"type":  "track",
+		})
+	}
+
+	// Invia la risposta combinata al frontend Preact
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{
+		Success: true,
+		Data: map[string]interface{}{
+			"albums": formattedAlbums,
+			"tracks": formattedTracks,
+		},
+	})
+}

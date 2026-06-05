@@ -55,4 +55,11 @@ export const api = {
         headers: JSON_HEADERS,
         body: JSON.stringify({ text }),
     }),
+    deezerSearch: (q, type) => req(`/api/deezer/search/${encodeURIComponent(type)}?q=${encodeURIComponent(q)}`),
+    deezerArtistDetails: (artistId) => req(`/api/deezer/artist/${artistId}`),
+    deezerPlay: (deviceId, item) => req(`/api/deezer/play/${deviceId}`, {
+        method: 'POST',
+        headers: JSON_HEADERS,
+        body: JSON.stringify(item),
+    }),
 };

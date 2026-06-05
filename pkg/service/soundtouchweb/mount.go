@@ -76,6 +76,12 @@ func (app *WebApp) Mount(r chi.Router, discoveryService *discovery.UnifiedDiscov
 	r.Get("/api/radiobrowser/search", app.HandleRadioBrowserSearch)
 	r.Post("/api/radiobrowser/play/{id}", app.HandlePlayRadioBrowser)
 
+    // DeezerBrowser search
+	r.Get("/api/deezer/search", app.HandleDeezerSearch)
+	r.Get("/api/deezer/search/{type}", app.HandleDeezerSearch)
+	r.Get("/api/deezer/artist/{artistId}", app.HandleDeezerArtistDetails)
+	r.Post("/api/deezer/play/{id}", app.HandlePlayDeezer)
+
 	// Custom URL playback
 	r.Post("/api/play-url/{id}", app.HandlePlayURL)
 
@@ -88,6 +94,7 @@ func (app *WebApp) Mount(r chi.Router, discoveryService *discovery.UnifiedDiscov
 	r.Get("/device/*", app.serveIndex)
 	r.Get("/tunein", app.serveIndex)
 	r.Get("/radiobrowser", app.serveIndex)
+	r.Get("/deezer", app.serveIndex)
 	r.Get("/playurl", app.serveIndex)
 	r.Get("/tts", app.serveIndex)
 }
