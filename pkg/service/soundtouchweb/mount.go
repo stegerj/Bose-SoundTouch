@@ -116,12 +116,14 @@ func (app *WebApp) MountWeb(r chi.Router, discoveryService *discovery.UnifiedDis
 				r.Get("/navigate/*", app.HandleTuneInNavigate)
 			})
 	// DeezerBrowser search
-	r.Get("/api/deezer/search", app.HandleDeezerSearch)
-	r.Get("/api/deezer/search/{type}", app.HandleDeezerSearch)
-	r.Get("/api/deezer/artist/{artistId}", app.HandleDeezerArtistDetails)
-	r.Get("/api/deezer/artist/{artistId}/radio", app.HandleDeezerArtistRadio)
-	r.Get("/api/deezer/album/{albumId}/tracks", app.HandleDeezerAlbumTracks)
-	r.Post("/api/deezer/play/{id}", app.HandlePlayDeezer)
+	r.Route("/deezer",func(r chi.Router) {
+        r.Get("/search", app.HandleDeezerSearch)
+        r.Get("/search/{type}", app.HandleDeezerSearch)
+        r.Get("/artist/{artistId}", app.HandleDeezerArtistDetails)
+        r.Get("/artist/{artistId}/radio", app.HandleDeezerArtistRadio)
+        r.Get("/album/{albumId}/tracks", app.HandleDeezerAlbumTracks)
+        r.Post("/play/{id}", app.HandlePlayDeezer)
+	})
 
 	// Custom URL playback
 	r.Post("/api/play-url/{id}", app.HandlePlayURL)
