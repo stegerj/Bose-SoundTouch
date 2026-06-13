@@ -38,7 +38,7 @@ func hostOnly(raw string) string {
 // HandleAPISpeakText synthesizes and plays text on a device. The Web UI talks
 // to speakers directly for most controls, but TTS synthesis (Google Cloud) and
 // the Bose app_key live in the AfterTouch service, so this proxies to the
-// service's /setup/tts/speak endpoint, targeting the device by its IP/host.
+// service's /api/setup/tts/speak endpoint, targeting the device by its IP/host.
 func (app *WebApp) HandleAPISpeakText(w http.ResponseWriter, r *http.Request) {
 	deviceID := chi.URLParam(r, "id")
 
@@ -70,15 +70,15 @@ func (app *WebApp) HandleAPISpeakText(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The TTS request is made server-side by soundtouch-web, so its target must
+	// The TTS request is made server-side by soundtouch-player, so its target must
 	// be the operator-configured service URL — never a client-supplied value
 	// (that would let any LAN caller use this endpoint as an SSRF proxy). This
 	// differs from Play URL, where the URL is handed to the speaker, not fetched
-	// by soundtouch-web.
-	serviceURL := strings.TrimRight(app.ServiceURL, "/")
+	// by soundtouch-player.
+	serviceURL := strings.TrimRight(app.proxyServiceURL(), "/")
 	if serviceURL == "" {
 		app.sendError(w,
-			"TTS requires the AfterTouch service URL. Start soundtouch-web with --service-url <https://your-aftertouch-host>.",
+			"TTS requires the AfterTouch service URL. Start soundtouch-player with --service-url <https://your-aftertouch-host>.",
 			http.StatusBadRequest)
 
 		return
@@ -118,7 +118,7 @@ func (app *WebApp) HandleAPISpeakText(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	upstream, err := http.NewRequestWithContext(r.Context(), http.MethodPost, serviceURL+"/setup/tts/speak", bytes.NewReader(body))
+	upstream, err := http.NewRequestWithContext(r.Context(), http.MethodPost, serviceURL+"/api/setup/tts/speak", bytes.NewReader(body))
 	if err != nil {
 		app.sendError(w, "Failed to build TTS request", http.StatusInternalServerError)
 		return

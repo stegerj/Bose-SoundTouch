@@ -3,6 +3,7 @@ package soundtouchweb
 import (
 	"context"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/gesellix/bose-soundtouch/pkg/client"
@@ -78,18 +79,78 @@ func (app *WebApp) AddDeviceByHost(host string, port int, source string) {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 
-		for range ticker.C {
-			app.UpdateDeviceStatus(host, conn)
+		for {
+			select {
+			case <-ticker.C:
+				app.UpdateDeviceStatus(host, conn)
+			case <-conn.Done():
+				return
+			}
 		}
 	}()
 
 	log.Printf("Added %s device %s (%s) at %s:%d", sanitizeLog(source), sanitizeLog(info.Name), sanitizeLog(info.Type), sanitizeLog(host), port)
 }
 
-// DiscoverDevices runs an mDNS/UPnP sweep and registers any found
-// devices via AddDeviceByHost. Used by the startup goroutine in main
-// and by the /api/discover route inside Mount.
+// SeedExtraDevices registers any devices reported by the ExtraDeviceHosts hook
+// (if set) via AddDeviceByHost. Idempotent: already-known hosts are skipped.
+// Used by the embedded build to surface the service datastore's devices even
+// when network discovery is disabled; a no-op for standalone soundtouch-player.
+//
+// Hosts are probed concurrently: AddDeviceByHost makes a blocking /info call
+// (up to its 10 s timeout) for each unknown host, so an offline speaker in the
+// datastore would otherwise stall the whole seed for 10 s, serially. Fanning
+// out bounds the cost to roughly a single timeout regardless of how many
+// devices are offline. AddDeviceByHost is registry-safe under concurrency.
+func (app *WebApp) SeedExtraDevices() {
+	if app.ExtraDeviceHosts == nil {
+		return
+	}
+
+	var wg sync.WaitGroup
+
+	for _, host := range app.ExtraDeviceHosts() {
+		if host == "" {
+			continue
+		}
+
+		wg.Add(1)
+
+		go func(h string) {
+			defer wg.Done()
+
+			app.AddDeviceByHost(h, 8090, "service-store")
+		}(host)
+	}
+
+	wg.Wait()
+}
+
+// DiscoverDevices refreshes the device registry. When TriggerDiscovery is set
+// (embedded build), it runs the host service's discovery so the shared store is
+// refreshed, then re-syncs from ExtraDeviceHosts — it does NOT run its own
+// mDNS/UPnP, so the embedded build never duplicates the service's discovery.
+// When discoveryService is non-nil (standalone soundtouch-player), it runs an
+// mDNS/UPnP sweep and registers any found devices via AddDeviceByHost.
+// Used by the startup goroutine in main and by the /api/control/discover route
+// inside MountWeb.
 func (app *WebApp) DiscoverDevices(ctx context.Context, discoveryService *discovery.UnifiedDiscoveryService) {
+	// External discovery (embedded build): run the host service's sweep so the
+	// shared datastore is refreshed.
+	if app.TriggerDiscovery != nil {
+		app.TriggerDiscovery(ctx)
+	}
+
+	// Re-sync from the external device source (embedded: the service datastore).
+	// No-op when ExtraDeviceHosts is unset.
+	app.SeedExtraDevices()
+
+	// Own mDNS/UPnP sweep — standalone only. The embedded build passes a nil
+	// discovery service and relies entirely on the host service's discovery.
+	if discoveryService == nil {
+		return
+	}
+
 	log.Println("Starting device discovery...")
 
 	devices, err := discoveryService.DiscoverDevices(ctx)

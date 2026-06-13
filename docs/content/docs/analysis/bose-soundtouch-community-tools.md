@@ -198,7 +198,7 @@ The web UI is already fully responsive — it has Bootstrap grid columns, `@medi
 ### Priority 2 — RadioBrowser as a first-class provider
 
 AfterTouch can proxy and play any stream URL, but there is no built-in station search. OpenCloudTouch's RadioBrowser integration is the reference. Tasks:
-- Wire the [RadioBrowser API](https://www.radio-browser.info/) into the `soundtouch-web` web UI as a browsable/searchable source.
+- Wire the [RadioBrowser API](https://www.radio-browser.info/) into the `soundtouch-player` web UI as a browsable/searchable source.
 - Make discovered stations directly presetable to hardware buttons.
 - This is the most common replacement for TuneIn for users who listened to internet radio via presets.
 
@@ -242,7 +242,7 @@ These exist in soundcork but are deliberate architectural choices in AfterTouch,
 
 | Area                     | soundcork                             | AfterTouch                                                |
 |--------------------------|---------------------------------------|-----------------------------------------------------------|
-| Web UI                   | FastAPI + Jinja2 miniapp and admin UI | Separate `soundtouch-web` component (Go + plain HTML/JS)  |
+| Web UI                   | FastAPI + Jinja2 miniapp and admin UI | Separate `soundtouch-player` component (Go + plain HTML/JS)  |
 | Direct device management | SSH/SCP access into speakers          | HTTP API only; no SSH                                     |
 | Device discovery client  | Python `upnpclient` library           | mDNS + UPnP in Go, with dedicated DNS interception server |
 | Token delivery           | Push (ZeroConf priming to port 8200)  | Pull (device calls back to fetch)                         |

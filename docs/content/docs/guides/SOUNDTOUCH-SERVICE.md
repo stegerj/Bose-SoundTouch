@@ -30,7 +30,7 @@ The service consists of several key components:
 - **Service Registry**: Media service discovery and configuration
 - **Playback Control**: Stream URL resolution and audio metadata
 
-![soundtouch-web TuneIn search — browsing smooth jazz stations](/images/soundtouch-web-tunein.png)
+![soundtouch-player TuneIn search — browsing smooth jazz stations](/images/soundtouch-player-tunein.png)
 
 ### Marge Services (Account & Device Management)
 - **Account Management**: User account simulation and device association
@@ -390,7 +390,7 @@ Lists all discovered SoundTouch devices with their current status.
 ```json
 [
   {
-    "device_id": "08DF1F0BA325",
+    "device_id": "AABBCCDDEE0A",
     "name": "Living Room Speaker",
     "ip_address": "192.0.2.100",
     "product_code": "SoundTouch 20",

@@ -48,6 +48,7 @@ func setupCommand() *cli.Command {
 			setupWaitAPCmd(),
 			setupWaitOnlineCmd(),
 			setupSSHCheckCmd(),
+			setupEnableSSHCmd(),
 			setupRemoteServicesCmd(),
 			setupInstallCACmd(),
 			setupMigrateCmd(),
@@ -537,6 +538,169 @@ func setupSSHCheckCmd() *cli.Command {
 	}
 }
 
+func setupEnableSSHCmd() *cli.Command {
+	return &cli.Command{
+		Name: "enable-ssh",
+		Usage: "Bootstrap SSH on a speaker with no prior access via the port-17000 envswitch trick (#471), " +
+			"then restore clean URLs and persist it",
+		Before: RequireHost,
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name: "service-url",
+				Usage: "AfterTouch service base URL to point the speaker at (e.g. https://192.0.2.10:8443). " +
+					"Optional: enabling SSH does not need a live server (the injection fires when the speaker " +
+					"parses its boseurls), so you can omit this now and set the real URLs later via migration",
+			},
+			&cli.DurationFlag{
+				Name:  "wait",
+				Value: 90 * time.Second,
+				Usage: "How long to wait for sshd (:22) after the envswitch injection (it runs on the speaker's next boseurls check, ~60s)",
+			},
+			&cli.BoolFlag{
+				Name:  "no-reset-urls",
+				Usage: "Skip restoring clean boseurls after SSH is up (leaves the injected marge URL in place)",
+			},
+			&cli.BoolFlag{
+				Name:  "no-persist",
+				Usage: "Skip persisting the remote_services marker (SSH would not survive a reboot)",
+			},
+			&cli.StringFlag{
+				Name:  "authorized-key",
+				Usage: "Opt-in hardening: install this SSH public key for root (key auth instead of the empty-password login). Pass the key text, e.g. --authorized-key \"$(cat id_ed25519.pub)\"",
+			},
+			&cli.BoolFlag{
+				Name:  "close-17000",
+				Usage: "Opt-in hardening: block port 17000 from the LAN (firewall rule applied now + persisted); loopback access is kept",
+			},
+		},
+		Action: func(c *cli.Context) error {
+			cfg := GetClientConfig(c)
+			m := setup.NewManager("", nil, nil)
+
+			// The URL is only the vehicle for the command injection; the
+			// SSH-enable fires when the speaker parses its boseurls, whether
+			// or not anything answers there. When the user has no service URL
+			// yet, use a clearly-placeholder value and tell them to set the
+			// real URLs during migration.
+			serviceURL := c.String("service-url")
+			placeholder := serviceURL == ""
+
+			if placeholder {
+				serviceURL = "https://aftertouch.invalid"
+			}
+
+			fmt.Printf("Enabling SSH on %s via telnet :17000 (runs on the speaker's next boseurls check, up to ~60s)...\n", cfg.Host)
+
+			logs, err := m.EnableSSHViaTelnet(cfg.Host, serviceURL)
+			if logs != "" {
+				fmt.Print(logs)
+			}
+
+			if err != nil {
+				PrintError(err.Error())
+				return err
+			}
+
+			fmt.Printf("Waiting up to %s for sshd (:22) to come up...\n", c.Duration("wait"))
+
+			if err := setup.WaitForSSHPort(cfg.Host, c.Duration("wait")); err != nil {
+				// Not a hard failure: on some devices (e.g. the Wireless Link
+				// Adapter, see #471) the envswitch injection is accepted but
+				// sshd only actually starts after the speaker restarts. We
+				// deliberately leave the injected boseurls in place (no reset)
+				// so a power-cycle re-triggers the unlock, and guide the user
+				// to reboot and retry rather than exiting with an error.
+				fmt.Println()
+				PrintWarning(fmt.Sprintf("sshd (:22) did not come up within %s, but the speaker accepted the SSH-enable command.", c.Duration("wait")))
+				fmt.Println("On some devices sshd only starts after a restart. Next steps:")
+				fmt.Println("  1. Power-cycle the speaker (unplug it, wait a few seconds, plug it back in).")
+				fmt.Println("  2. Once it is back online, run this same command again, or just connect with:")
+				fmt.Printf("       ssh -o HostKeyAlgorithms=+ssh-rsa,ssh-dss root@%s\n", cfg.Host)
+				fmt.Println("The temporary boseurls were left in place on purpose, so the restart re-triggers the unlock.")
+
+				if placeholder {
+					fmt.Println("(No --service-url was given; you'll set the real service URLs later during migration.)")
+				}
+
+				return nil
+			}
+
+			PrintSuccess("SSH is up on " + cfg.Host)
+
+			if !c.Bool("no-reset-urls") {
+				fmt.Println("Restoring clean boseurls (so the marge URL is usable again)...")
+
+				rlogs, rerr := m.ResetBoseURLs(cfg.Host, serviceURL)
+				if rlogs != "" {
+					fmt.Print(rlogs)
+				}
+
+				if rerr != nil {
+					PrintError(rerr.Error())
+					return rerr
+				}
+			}
+
+			if !c.Bool("no-persist") {
+				fmt.Println("Persisting the remote_services marker (SSH survives reboot)...")
+
+				plogs, perr := m.EnsureRemoteServices(cfg.Host)
+				if plogs != "" {
+					fmt.Print(plogs)
+				}
+
+				if perr != nil {
+					PrintError(perr.Error())
+					return perr
+				}
+			}
+
+			if key := c.String("authorized-key"); key != "" {
+				fmt.Println("Installing authorized_keys for root (key auth)...")
+
+				klogs, kerr := m.InstallAuthorizedKey(cfg.Host, key)
+				if klogs != "" {
+					fmt.Print(klogs)
+				}
+
+				if kerr != nil {
+					PrintError(kerr.Error())
+					return kerr
+				}
+			}
+
+			closed17000 := c.Bool("close-17000")
+			if closed17000 {
+				fmt.Println("Closing port 17000 to the LAN (loopback kept)...")
+
+				clogs, cerr := m.Close17000(cfg.Host)
+				if clogs != "" {
+					fmt.Print(clogs)
+				}
+
+				if cerr != nil {
+					PrintError(cerr.Error())
+					return cerr
+				}
+			}
+
+			PrintSuccess("Done — SSH enabled on " + cfg.Host + ". From here, the usual migration / CA-install / inspect commands work.")
+
+			if placeholder {
+				fmt.Println("No --service-url was given, so the speaker's boseurls now point at a placeholder; run your migration next to set the real service URLs.")
+			}
+
+			if closed17000 {
+				fmt.Println("Port 17000 is now blocked from the LAN (loopback kept).")
+			} else {
+				fmt.Println("Note: port 17000 is left open (opt-in --close-17000 to block it from the LAN).")
+			}
+
+			return nil
+		},
+	}
+}
+
 func setupRemoteServicesCmd() *cli.Command {
 	return &cli.Command{
 		Name:   "remote-services",
@@ -606,7 +770,7 @@ func setupInstallCACmd() *cli.Command {
 				return err
 			}
 
-			fmt.Printf("Fetched %d bytes of CA PEM from %s/setup/ca.crt\n", len(certPEM), serviceURL)
+			fmt.Printf("Fetched %d bytes of CA PEM from %s/api/setup/ca.crt\n", len(certPEM), serviceURL)
 
 			m := setup.NewManager(serviceURL, nil, nil)
 
@@ -627,11 +791,11 @@ func setupInstallCACmd() *cli.Command {
 	}
 }
 
-// fetchCACert pulls AfterTouch's CA bundle from /setup/ca.crt. On HTTP 401
+// fetchCACert pulls AfterTouch's CA bundle from /api/setup/ca.crt. On HTTP 401
 // it prompts interactively for basic-auth credentials (or accepts --auth)
 // and retries once.
 func fetchCACert(serviceURL, authFlag string) ([]byte, error) {
-	url := serviceURL + "/setup/ca.crt"
+	url := serviceURL + "/api/setup/ca.crt"
 
 	doRequest := func(user, pass string) (*http.Response, error) {
 		req, err := http.NewRequest(http.MethodGet, url, nil)

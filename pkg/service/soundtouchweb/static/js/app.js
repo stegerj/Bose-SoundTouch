@@ -10,6 +10,7 @@ import { Zone } from './components/Zone.js';
 import { Recents } from './components/Recents.js';
 import { TuneInBrowser } from './components/TuneInBrowser.js';
 import { RadioBrowser } from './components/RadioBrowser.js';
+import { Library } from './components/Library.js';
 import { DeezerBrowser } from './components/DeezerBrowser.js';
 import { PlayURL } from './components/PlayURL.js';
 import { TTS } from './components/TTS.js';
@@ -76,6 +77,7 @@ function App() {
         }
         if (page === 'tunein') return 'TuneIn';
         if (page === 'radiobrowser') return 'RadioBrowser';
+        if (page === 'library') return 'Library';
         if (page === 'deezer') return 'Deezer';
         if (page === 'playurl') return 'Play URL';
         if (page === 'tts') return 'TTS';
@@ -83,7 +85,7 @@ function App() {
     };
 
     useEffect(() => {
-        fetch('/api/version')
+        fetch('/api/control/version')
             .then(res => res.json())
             .then(resp => {
                 if (resp.success) {
@@ -93,7 +95,7 @@ function App() {
             .catch(err => console.error('Failed to fetch version:', err));
 
         const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const ws = new WebSocket(`${protocol}//${location.host}/ws`);
+        const ws = new WebSocket(`${protocol}//${location.host}/api/control/ws`);
         let reconnectTimer;
 
         ws.onmessage = (event) => {
@@ -150,11 +152,30 @@ function App() {
         await api.discover();
     }
 
+    async function removeDevice(id) {
+        const name = devices[id]?.info?.name || id;
+        if (!confirm(`Remove "${name}"?\n\nThis clears it from AfterTouch. A device still online may reappear after the next discovery scan.`)) {
+            return;
+        }
+        // Optimistically drop it; the server's devices broadcast reconciles.
+        setDevices(prev => {
+            const next = { ...prev };
+            delete next[id];
+            return next;
+        });
+        try {
+            const resp = await api.removeDevice(id);
+            showToast(resp?.success ? `Removed "${name}"` : (resp?.error || 'Failed to remove device'));
+        } catch (err) {
+            showToast('Failed to remove device');
+        }
+    }
+
     return html`
         <div class="app">
             <nav class="navbar">
-                <a class="brand" href="#" onClick=${(e) => { e.preventDefault(); navigate('devices'); }}>
-                    <img src="/static/img/logo.svg" alt="AfterTouch" class="nav-logo" />
+                <a class="brand" href="/?chooser" title="AfterTouch home">
+                    <img src="/app/static/img/logo.svg" alt="AfterTouch" class="nav-logo" />
                     <div class="brand-text">
                         <span class="brand-name">AfterTouch</span>
                         <span class="brand-subtitle">Bose SoundTouch Toolkit</span>
@@ -166,19 +187,19 @@ function App() {
                         onClick=${(e) => { e.preventDefault(); navigate('devices'); }}
                         title="Devices"
                     >
-                        <img src="/static/img/speaker-mono.svg" alt="Devices" class="nav-device-icon" />
+                        <img src="/app/static/img/speaker-mono.svg" alt="Devices" class="nav-device-icon" />
                     </a>
                     <a href="#" class="${page === 'tunein' ? 'active' : ''}"
                         onClick=${(e) => { e.preventDefault(); navigate('tunein'); }}
                         title="TuneIn"
                     >
-                        <img src="/static/img/tunein-mono.svg" alt="TuneIn" class="nav-tunein-icon" />
+                        <img src="/app/static/img/tunein-mono.svg" alt="TuneIn" class="nav-tunein-icon" />
                     </a>
                     <a href="#" class="${page === 'radiobrowser' ? 'active' : ''}"
                         onClick=${(e) => { e.preventDefault(); navigate('radiobrowser'); }}
                         title="RadioBrowser"
                     >
-                        <img src="/static/img/radiobrowser-mono.svg" alt="RadioBrowser" class="nav-rb-icon" />
+                        <img src="/app/static/img/radiobrowser-mono.svg" alt="RadioBrowser" class="nav-rb-icon" />
                     </a>
                     <a href="#" class="${page === 'deezer' ? 'active' : ''}"
                         onClick=${(e) => { e.preventDefault(); navigate('deezer'); }}
@@ -190,8 +211,13 @@ function App() {
                         onClick=${(e) => { e.preventDefault(); navigate('playurl'); }}
                         title="Play URL"
                     >
-                        <img src="/static/img/link-mono.svg" alt="Play URL" class="nav-url-icon" />
+                        <img src="/app/static/img/link-mono.svg" alt="Play URL" class="nav-url-icon" />
                     </a>
+                    <a href="#" class="${page === 'library' ? 'active' : ''}"
+                        onClick=${(e) => { e.preventDefault(); navigate('library'); }}
+                        title="Library"
+                        style="font-size:.75rem;font-weight:600;letter-spacing:.02em"
+                    >Lib</a>
                     <a href="#" class="${page === 'tts' ? 'active' : ''}"
                         onClick=${(e) => { e.preventDefault(); navigate('tts'); }}
                         title="TTS"
@@ -204,8 +230,14 @@ function App() {
                     </a>
                     <span class="nav-separator">|</span>
                     <button class="btn-icon" onClick=${discover} title="Discover">
-                        <img src="/static/img/knob-mono.svg" alt="Discover" class="nav-discover-icon ${isDiscovering ? 'buzzing' : ''}" />
+                        <img src="/app/static/img/knob-mono.svg" alt="Discover" class="nav-discover-icon ${isDiscovering ? 'buzzing' : ''}" />
                     </button>
+                    <a href="https://gesellix.github.io/Bose-SoundTouch/" target="_blank" rel="noopener" title="Documentation">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+                            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+                        </svg>
+                    </a>
                 </div>
             </nav>
 
@@ -217,6 +249,7 @@ function App() {
                         isDiscovering=${isDiscovering}
                         onSelect=${(id) => navigate('device', id)}
                         onDiscover=${discover}
+                        onRemove=${removeDevice}
                     />
                 ` : page === 'device' ? html`
                     <${DeviceDetail}
@@ -235,6 +268,8 @@ function App() {
                     <${PlayURL} key="play-url" devices=${devices} serverServiceUrl=${version?.service_url || ''} />
                 ` : page === 'tts' ? html`
                     <${TTS} key="tts" devices=${devices} serverServiceUrl=${version?.service_url || ''} />
+                ` : page === 'library' ? html`
+                    <${Library} key="library" devices=${devices} />
                 ` : null}
             </main>
 

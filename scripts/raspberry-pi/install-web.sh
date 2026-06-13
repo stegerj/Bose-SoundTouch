@@ -2,6 +2,17 @@
 set -euo pipefail
 
 # ==============================================================================
+# DEPRECATED: soundtouch-web has been renamed to soundtouch-player.
+# This installer still works (the soundtouch-web release asset is published as
+# a transitional alias) but will be removed in a future release. Please switch
+# to install-player.sh, which installs the soundtouch-player binary/service.
+# ==============================================================================
+echo "NOTICE: soundtouch-web has been renamed to soundtouch-player." >&2
+echo "        This installer (install-web.sh) is deprecated and will be removed" >&2
+echo "        in a future release; please switch to install-player.sh." >&2
+echo >&2
+
+# ==============================================================================
 # Bose-SoundTouch soundtouch-web installer (systemd, headless)
 #
 # Usage:

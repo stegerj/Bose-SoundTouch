@@ -15,11 +15,13 @@ dist/
 /soundtouch-backup
 /soundtouch-cli
 /soundtouch-service
+/soundtouch-player
 /soundtouch-web
 /dummy-speaker
 /example-mdns
 /example-upnp
 /example-unified
+/example-dlna-server
 /mdns-scanner
 /websocket-demo
 /main

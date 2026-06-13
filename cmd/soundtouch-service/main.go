@@ -22,12 +22,14 @@ import (
 
 	"github.com/gesellix/bose-soundtouch/pkg/discovery"
 	"github.com/gesellix/bose-soundtouch/pkg/service/amazon"
+	"github.com/gesellix/bose-soundtouch/pkg/service/bmx"
 	"github.com/gesellix/bose-soundtouch/pkg/service/certmanager"
 	"github.com/gesellix/bose-soundtouch/pkg/service/datastore"
 	"github.com/gesellix/bose-soundtouch/pkg/service/handlers"
 	"github.com/gesellix/bose-soundtouch/pkg/service/logbuf"
 	"github.com/gesellix/bose-soundtouch/pkg/service/proxy"
 	"github.com/gesellix/bose-soundtouch/pkg/service/setup"
+	"github.com/gesellix/bose-soundtouch/pkg/service/soundtouchweb"
 	"github.com/gesellix/bose-soundtouch/pkg/service/spotify"
 	"github.com/gesellix/bose-soundtouch/pkg/service/stockholm"
 	"github.com/go-chi/chi/v5"
@@ -376,6 +378,16 @@ func main() {
 				EnvVars: []string{"AMAZON_PROFILE_URL"},
 			},
 			&cli.StringFlag{
+				Name:    "tunein-opml-url",
+				Usage:   "TuneIn OPML base URL, covering Tune.ashx/describe.ashx/navigate (for testing / local mock; defaults to opml.radiotime.com)",
+				EnvVars: []string{"TUNEIN_OPML_URL"},
+			},
+			&cli.StringFlag{
+				Name:    "tunein-api-url",
+				Usage:   "TuneIn API base URL, covering search and profile contents (for testing / local mock; defaults to api.radiotime.com)",
+				EnvVars: []string{"TUNEIN_API_URL"},
+			},
+			&cli.StringFlag{
 				Name:    "tts-provider",
 				Usage:   "Text-to-speech provider: 'translate' (Google Translate, no credentials, default) or 'google-cloud' (Google Cloud TTS, needs an API key). Empty falls back to translate; leave unset to let a value saved in the settings UI take effect",
 				EnvVars: []string{"TTS_PROVIDER"},
@@ -500,6 +512,12 @@ func main() {
 			initMusicServices(config, server)
 			initTTSService(config, server)
 
+			// Redirect TuneIn upstream calls when overridden (e.g. to a local
+			// mock in integration tests); empty values keep the real hosts.
+			if config.tuneInOpmlURL != "" || config.tuneInAPIURL != "" {
+				bmx.SetTuneInEndpoints(config.tuneInOpmlURL, config.tuneInAPIURL)
+			}
+
 			// Load and set initial DNS discoveries
 			dnsDiscoveries, err := ds.LoadDNSDiscoveries()
 			if err == nil && len(dnsDiscoveries) > 0 {
@@ -570,7 +588,19 @@ func main() {
 				}
 			}
 
-			r := setupRouter(server, stockholmHandler)
+			// Embedded web UI (soundtouch-player): LAN control UI under /app, control
+			// API under /api/control. Same LAN-trust tier as /setup, no auth.
+			// Server-side self-calls (TTS proxy) use the service's own loopback
+			// HTTP listener so they never depend on TLS / the service CA.
+			loopbackHost := config.bindAddr
+			if loopbackHost == "" {
+				loopbackHost = "127.0.0.1"
+			}
+
+			internalURL := "http://" + net.JoinHostPort(loopbackHost, config.port)
+			webApp := newEmbeddedWebApp(server, config.serverURL, internalURL, ds)
+
+			r := setupRouter(server, stockholmHandler, webApp)
 
 			// Bind the listener before logging so we print the true
 			// effective port (handles :0 and catches "address already
@@ -656,6 +686,8 @@ type serviceConfig struct {
 	amazonRedirectURI   string
 	amazonTokenURL      string
 	amazonProfileURL    string
+	tuneInOpmlURL       string
+	tuneInAPIURL        string
 	mgmtUsername        string
 	mgmtPassword        string
 	ttsProvider         string
@@ -693,6 +725,9 @@ func loadConfig(c *cli.Context) serviceConfig {
 	if serverURL == "" {
 		serverURL = "http://" + hostname + ":" + port
 	}
+	// Strip a trailing slash so it cannot leak into the BMX registry base or the
+	// margeServerUrl/bmxRegistryUrl pushed to speakers during migration.
+	serverURL = handlers.NormalizeServerURL(serverURL)
 
 	httpsPort := c.String("https-port")
 
@@ -737,6 +772,8 @@ func loadConfig(c *cli.Context) serviceConfig {
 	amazonRedirectURI := c.String("amazon-redirect-uri")
 	amazonTokenURL := c.String("amazon-token-url")
 	amazonProfileURL := c.String("amazon-profile-url")
+	tuneInOpmlURL := c.String("tunein-opml-url")
+	tuneInAPIURL := c.String("tunein-api-url")
 	mgmtUsername := c.String("mgmt-username")
 	mgmtPassword := c.String("mgmt-password")
 	ttsProvider := c.String("tts-provider")
@@ -782,6 +819,8 @@ func loadConfig(c *cli.Context) serviceConfig {
 		amazonRedirectURI:   amazonRedirectURI,
 		amazonTokenURL:      amazonTokenURL,
 		amazonProfileURL:    amazonProfileURL,
+		tuneInOpmlURL:       tuneInOpmlURL,
+		tuneInAPIURL:        tuneInAPIURL,
 		mgmtUsername:        mgmtUsername,
 		mgmtPassword:        mgmtPassword,
 		ttsProvider:         ttsProvider,
@@ -878,7 +917,7 @@ func applyPersistedSettings(ds *datastore.DataStore, config *serviceConfig) data
 	}
 
 	if persisted.ServerURL != "" {
-		config.serverURL = persisted.ServerURL
+		config.serverURL = handlers.NormalizeServerURL(persisted.ServerURL)
 	}
 
 	if persisted.HTTPServerURL != "" {
@@ -1025,12 +1064,56 @@ func createDefaultSettings(ds *datastore.DataStore, config serviceConfig) datast
 }
 
 func initDataStore(dataDir string) *datastore.DataStore {
+	warnIfDataDirNotWritable(dataDir)
+
 	ds := datastore.NewDataStore(dataDir)
 	if err := ds.Initialize(); err != nil {
 		log.Printf("Warning: Failed to initialize datastore: %v", err)
 	}
 
 	return ds
+}
+
+// warnIfDataDirNotWritable probes the data dir and logs an actionable message
+// when the process can't write to it. The common cause is running the
+// container as non-root (uid 65532) while a bind-mounted host directory is
+// owned by someone else; without this the failure would surface later as a
+// cryptic permission error deep in a save. It only warns: the datastore's own
+// resilience handles the degraded state.
+func warnIfDataDirNotWritable(dataDir string) {
+	if dataDir == "" {
+		return
+	}
+
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		log.Printf("WARNING: data dir %s cannot be created: %v", sanitizeLog(dataDir), err)
+		logDataDirChownHint(dataDir)
+
+		return
+	}
+
+	probe := filepath.Join(dataDir, ".write-probe")
+	if err := os.WriteFile(probe, []byte("ok"), 0o600); err != nil {
+		log.Printf("WARNING: data dir %s is not writable: %v", sanitizeLog(dataDir), err)
+		logDataDirChownHint(dataDir)
+
+		return
+	}
+
+	_ = os.Remove(probe)
+}
+
+// logDataDirChownHint prints the one-time fix for a non-writable bind-mounted
+// data dir, using the process's own uid. Skipped where uid is unavailable
+// (e.g. Windows), where the hint wouldn't apply.
+func logDataDirChownHint(dataDir string) {
+	uid := os.Getuid()
+	if uid < 0 {
+		return
+	}
+
+	log.Printf("         The service runs as uid %d. If you bind-mounted a host directory as the data dir, "+
+		"make it writable once: chown -R %d:%d %s", uid, uid, uid, sanitizeLog(dataDir))
 }
 
 func initCertificateManager(dataDir, hostname string) *certmanager.CertificateManager {
@@ -1057,8 +1140,87 @@ func startDeviceDiscovery(server *handlers.Server) {
 	}()
 }
 
-func setupRouter(server *handlers.Server, stockholmHandler *stockholm.Handler) *chi.Mux {
+// newEmbeddedWebApp builds the soundtouch-player application for embedding in the
+// service router: release metadata from the build vars, the service's public
+// ServiceURL (used by Play URL for speaker-fetched stream URLs and shown in the
+// UI), a loopback InternalServiceURL for the player's own server-side self-calls
+// (the TTS proxy) so they never depend on TLS or the service CA, and device
+// state sourced entirely from the service.
+//
+// The web UI shares the service's discovery rather than running its own (the
+// datastore is the single source of truth): ExtraDeviceHosts reads it,
+// TriggerDiscovery runs the service sweep on a UI-initiated "discover", and the
+// devices-changed hook re-syncs the UI registry whenever the service's
+// discovery or a manual add changes the set.
+func newEmbeddedWebApp(server *handlers.Server, serverURL, internalURL string, ds *datastore.DataStore) *soundtouchweb.WebApp {
+	webApp := soundtouchweb.NewWebApp()
+	webApp.Version = version
+	webApp.Commit = commit
+	webApp.Date = date
+	webApp.RepoURL = repoURL
+	webApp.ServiceURL = strings.TrimRight(serverURL, "/")
+
+	// The player's own server-side calls (the TTS proxy hits
+	// /api/setup/tts/speak) go to the service's loopback HTTP listener, not the
+	// public ServiceURL. That avoids the "service doesn't trust its own CA"
+	// x509 failure entirely: loopback is plain HTTP, so it needs no CA and
+	// works on HTTP and HTTPS deployments alike — and before the CA is even
+	// generated. ServiceURL stays the public URL because Play URL bakes it into
+	// stream URLs the speaker fetches and the UI displays it.
+	webApp.InternalServiceURL = internalURL
+
+	webApp.ExtraDeviceHosts = func() []string {
+		devices, listErr := ds.ListAllDevices()
+		if listErr != nil {
+			log.Printf("web UI: failed to list devices from datastore: %v", listErr)
+			return nil
+		}
+
+		hosts := make([]string, 0, len(devices))
+		for i := range devices {
+			if devices[i].IPAddress != "" {
+				hosts = append(hosts, devices[i].IPAddress)
+			}
+		}
+
+		return hosts
+	}
+
+	// UI "discover" runs the service's sweep, not a second mDNS stack.
+	webApp.TriggerDiscovery = server.DiscoverDevices
+
+	// A removal from the player UI cascades to the datastore (the single
+	// source of truth), so the device does not reappear on the next re-sync.
+	webApp.RemoveDeviceHook = func(deviceID string) error {
+		_, err := server.RemoveDeviceByID(deviceID)
+		return err
+	}
+
+	// Keep the UI registry live as the service discovers or devices are added.
+	server.SetDevicesChangedHook(func() {
+		webApp.SeedExtraDevices()
+		webApp.BroadcastDeviceList()
+	})
+
+	go func() {
+		// Project the current device set into the UI; the devices-changed hook
+		// and the service's periodic discovery keep it current from here on.
+		webApp.SeedExtraDevices()
+		webApp.BroadcastDeviceList()
+	}()
+
+	return webApp
+}
+
+func setupRouter(server *handlers.Server, stockholmHandler *stockholm.Handler, webApp *soundtouchweb.WebApp) *chi.Mux {
 	r := chi.NewRouter()
+
+	// CleanPath collapses duplicate slashes ("//bmx/..." -> "/bmx/...") and
+	// resolves . / .. before routing. Defensive net for the double-slash
+	// playback bug: even if a misconfigured base URL hands a speaker a "//bmx"
+	// path, it still reaches the right handler instead of 404ing. Runs first so
+	// every downstream middleware and the recorder see the cleaned path.
+	r.Use(middleware.CleanPath)
 
 	// TrustedRealIP must run before any handler that reads r.RemoteAddr —
 	// SnapshotMiddleware captures the request, and several handlers
@@ -1077,13 +1239,8 @@ func setupRouter(server *handlers.Server, stockholmHandler *stockholm.Handler) *
 	r.Use(server.RecordMiddleware)
 
 	r.Get("/", server.HandleRoot)
+	r.Get("/admin", server.HandleAdmin)
 	r.Get("/health", server.HandleHealth)
-	// Passive peer-reachability probe. Registers a device IP with the
-	// in-process observer, nudges :8090/swUpdateCheck, and waits for
-	// any inbound from that IP. Used post-migration where the daemon
-	// caches its swUpdateUrl at boot and the active round-trip can't
-	// reach it without a reboot.
-	r.Post("/setup/peer-probe/{deviceId}", server.HandlePeerProbe)
 	r.Get("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
 		// The favicon lives in the embedded web/img bundle, not under
 		// static/media — HandleMedia would 404. HandleWeb serves from
@@ -1108,6 +1265,8 @@ func setupRouter(server *handlers.Server, stockholmHandler *stockholm.Handler) *
 		r.Get("/registry/v1/servicesAvailability", server.HandleBMXServicesAvailability)
 
 		r.Route("/tunein", func(r chi.Router) {
+			// Bare service descriptor (the registry's `self` link for TuneIn).
+			r.Get("/", server.HandleTuneInService)
 			r.Get("/v1/playback/station/{stationID}", server.HandleTuneInPlayback)
 			r.Get("/v1/playback/episodes/{podcastID}", server.HandleTuneInPodcastInfo)
 			r.Get("/v1/playback/episode/{podcastID}", server.HandleTuneInPlaybackPodcast)
@@ -1128,6 +1287,7 @@ func setupRouter(server *handlers.Server, stockholmHandler *stockholm.Handler) *
 	// pkg/service/handlers/static/bmx_services_ustream.json), so speakers
 	// reach the token + station endpoints at exactly these paths under
 	// either DNS-interception or URL-flip migration.
+	r.Get("/core02/svc-bmx-adapter-orion/prod/orion", server.HandleOrionService)
 	r.Post("/core02/svc-bmx-adapter-orion/prod/orion/token", server.HandleOrionToken)
 	r.Get("/core02/svc-bmx-adapter-orion/prod/orion/station", server.HandleOrionPlayback)
 
@@ -1148,6 +1308,7 @@ func setupRouter(server *handlers.Server, stockholmHandler *stockholm.Handler) *
 		r.Post("/account", server.HandleMargeCreateAccount)
 		r.Post("/account/login", server.HandleMargeLogin)
 		r.Post("/account/{account}/source", server.HandleMargeAddSource)
+		r.Delete("/account/{account}/source/{sourceID}", server.HandleMargeDeleteSource)
 
 		r.Route("/account/{account}", func(r chi.Router) {
 			r.Get("/emailaddress", server.HandleMargeGetEmailAddress)
@@ -1195,6 +1356,9 @@ func setupRouter(server *handlers.Server, stockholmHandler *stockholm.Handler) *
 			// Speakers POST to /group/ (with trailing slash) when forwarding
 			// the addGroup payload to Marge during stereo-pair formation --
 			// see issue #252. Register both forms so chi accepts either.
+			// Speakers POST to /group/ (with trailing slash) when forwarding
+			// the addGroup payload to Marge during stereo-pair formation --
+			// see issue #252. Register both forms so chi accepts either.
 			r.Post("/group", server.HandleMargeAddGroup)
 			r.Post("/group/", server.HandleMargeAddGroup)
 			r.Post("/group/{groupId}", server.HandleMargeModifyGroup)
@@ -1233,31 +1397,38 @@ func setupRouter(server *handlers.Server, stockholmHandler *stockholm.Handler) *
 		r.Get("/resources/api_versions.xml", server.HandleMargeAPIVersions)
 	})
 
+	// The /accounts/* group mirrored /streaming/account/* for compatibility, but
+	// no speaker or app was ever observed using this prefix in the recording
+	// corpus (the integration tests that exercised it were migrated onto the
+	// /streaming equivalents). The whole mirror is therefore treated as unused
+	// and stubbed (HandleUnsupported): it logs + 501s so any real-world use
+	// surfaces instead of being silently dropped, leaving the prefix a clean
+	// removal candidate for the #451 refactor.
 	r.Route("/accounts", func(r chi.Router) {
 		r.Route("/{account}", func(r chi.Router) {
-			r.Get("/full", server.HandleMargeAccountFull)
-			r.Get("/sources", server.HandleMargeAccountSources)
-			r.Get("/devices", server.HandleMargeAccountDevices)
+			r.Get("/full", server.HandleUnsupported)
+			r.Get("/sources", server.HandleUnsupported)
+			r.Get("/devices", server.HandleUnsupported)
 
-			r.Post("/devices", server.HandleMargeAddDevice)
+			r.Post("/devices", server.HandleUnsupported)
 
-			r.Delete("/devices/{device}", server.HandleMargeRemoveDevice)
-			r.Get("/devices/{device}/group", server.HandleMargeDeviceGroup)
-			r.Get("/devices/{device}/group/", server.HandleMargeDeviceGroup)
-			r.Get("/devices/{device}/group/server", server.HandleMargeDeviceGroupServer)
-			r.Get("/devices/{device}/group/member", server.HandleMargeDeviceGroupMember)
+			r.Delete("/devices/{device}", server.HandleUnsupported)
+			r.Get("/devices/{device}/group", server.HandleUnsupported)
+			r.Get("/devices/{device}/group/", server.HandleUnsupported)
+			r.Get("/devices/{device}/group/server", server.HandleUnsupported)
+			r.Get("/devices/{device}/group/member", server.HandleUnsupported)
 
-			r.Post("/group", server.HandleMargeAddGroup)
-			r.Post("/group/", server.HandleMargeAddGroup)
-			r.Post("/group/{groupId}", server.HandleMargeModifyGroup)
-			r.Delete("/group/{groupId}", server.HandleMargeDeleteGroup)
-			r.Delete("/group", server.HandleMargeDeleteAccountGroups)
-			r.Delete("/group/", server.HandleMargeDeleteAccountGroups)
-			r.Get("/devices/{device}/presets", server.HandleMargePresets)
-			r.Get("/devices/{device}/recents", server.HandleMargeRecents)
+			r.Post("/group", server.HandleUnsupported)
+			r.Post("/group/", server.HandleUnsupported)
+			r.Post("/group/{groupId}", server.HandleUnsupported)
+			r.Delete("/group/{groupId}", server.HandleUnsupported)
+			r.Delete("/group", server.HandleUnsupported)
+			r.Delete("/group/", server.HandleUnsupported)
+			r.Get("/devices/{device}/presets", server.HandleUnsupported)
+			r.Get("/devices/{device}/recents", server.HandleUnsupported)
 
-			r.Post("/devices/{device}/presets/{presetNumber}", server.HandleMargeUpdatePreset)
-			r.Post("/devices/{device}/recents", server.HandleMargeAddRecent)
+			r.Post("/devices/{device}/presets/{presetNumber}", server.HandleUnsupported)
+			r.Post("/devices/{device}/recents", server.HandleUnsupported)
 		})
 	})
 
@@ -1292,47 +1463,70 @@ func setupRouter(server *handlers.Server, stockholmHandler *stockholm.Handler) *
 		r.Get("/auth", server.HandleSpeakerAuth)
 	})
 
+	// Management API (admin tier). Registered under both /mgmt (legacy) and
+	// /api/mgmt (new canonical — issue #451 route-transition step 1) from one
+	// shared registration so the two paths stay byte-identical; both carry the
+	// same Basic Auth. The browser OAuth callbacks are externally-pinned
+	// (provider redirect URIs) and therefore stay at /mgmt only, not aliased.
+	mountMgmtAuthed := func(r chi.Router) {
+		r.Route("/accounts", func(r chi.Router) {
+			r.Get("/", server.HandleMgmtListAccounts)
+			r.Get("/{accountId}", server.HandleMgmtAccountDetails)
+			r.Post("/{accountId}/language", server.HandleMgmtUpdateAccountLanguage)
+			r.Post("/{accountId}/provider-settings", server.HandleMgmtUpdateAccountProviderSetting)
+			r.Get("/{accountId}/speakers", server.HandleMgmtListSpeakers)
+		})
+
+		r.Route("/spotify", func(r chi.Router) {
+			r.Post("/init", server.HandleMgmtSpotifyInit)
+			r.Post("/confirm", server.HandleMgmtSpotifyConfirm)
+			r.Get("/accounts", server.HandleMgmtSpotifyAccounts)
+			r.Get("/token", server.HandleMgmtSpotifyToken)
+			r.Post("/entity", server.HandleMgmtSpotifyEntity)
+			r.Post("/prime", server.HandleMgmtPrimeDevice)
+		})
+
+		r.Route("/amazon", func(r chi.Router) {
+			r.Post("/init", server.HandleMgmtAmazonInit)
+			r.Post("/confirm", server.HandleMgmtAmazonConfirm)
+			r.Get("/accounts", server.HandleMgmtAmazonAccounts)
+			r.Get("/token", server.HandleMgmtAmazonToken)
+			r.Post("/prime", server.HandleMgmtPrimeDeviceAmazon)
+		})
+
+		r.Get("/devices/{deviceId}/events", server.HandleMgmtDeviceEvents)
+	}
+
 	r.Route("/mgmt", func(r chi.Router) {
 		// Browser OAuth callbacks — no auth required (provider redirects the
 		// user's browser here directly). The authorization code is single-use,
-		// short-lived, and useless without the client_secret.
+		// short-lived, and useless without the client_secret. Not aliased under
+		// /api/mgmt (externally-pinned redirect URIs).
 		r.Get("/spotify/callback", server.HandleMgmtSpotifyCallback)
 		r.Get("/amazon/callback", server.HandleMgmtAmazonCallback)
 
-		// All other management endpoints require Basic Auth.
+		// All other management endpoints require Basic Auth. On the legacy mount
+		// they also carry the deprecation signal (counts + one-time warning); the
+		// callbacks above are excluded (externally-pinned, not deprecated).
 		r.Group(func(r chi.Router) {
 			r.Use(server.BasicAuthMgmt())
-
-			r.Route("/accounts", func(r chi.Router) {
-				r.Get("/", server.HandleMgmtListAccounts)
-				r.Get("/{accountId}", server.HandleMgmtAccountDetails)
-				r.Post("/{accountId}/language", server.HandleMgmtUpdateAccountLanguage)
-				r.Post("/{accountId}/provider-settings", server.HandleMgmtUpdateAccountProviderSetting)
-				r.Get("/{accountId}/speakers", server.HandleMgmtListSpeakers)
-			})
-
-			r.Route("/spotify", func(r chi.Router) {
-				r.Post("/init", server.HandleMgmtSpotifyInit)
-				r.Post("/confirm", server.HandleMgmtSpotifyConfirm)
-				r.Get("/accounts", server.HandleMgmtSpotifyAccounts)
-				r.Get("/token", server.HandleMgmtSpotifyToken)
-				r.Post("/entity", server.HandleMgmtSpotifyEntity)
-				r.Post("/prime", server.HandleMgmtPrimeDevice)
-			})
-
-			r.Route("/amazon", func(r chi.Router) {
-				r.Post("/init", server.HandleMgmtAmazonInit)
-				r.Post("/confirm", server.HandleMgmtAmazonConfirm)
-				r.Get("/accounts", server.HandleMgmtAmazonAccounts)
-				r.Get("/token", server.HandleMgmtAmazonToken)
-				r.Post("/prime", server.HandleMgmtPrimeDeviceAmazon)
-			})
-
-			r.Get("/devices/{deviceId}/events", server.HandleMgmtDeviceEvents)
+			r.Use(server.DeprecatedRouteMiddleware)
+			mountMgmtAuthed(r)
 		})
 	})
 
-	r.Route("/setup", func(r chi.Router) {
+	r.Route("/api/mgmt", func(r chi.Router) {
+		r.Group(func(r chi.Router) {
+			r.Use(server.BasicAuthMgmt())
+			mountMgmtAuthed(r)
+		})
+	})
+
+	// Setup / admin API (admin tier). Registered under both /setup (legacy) and
+	// /api/setup (new canonical) from one shared registration. The Stockholm
+	// setup-wizard static catch-all is a frontend concern and stays under /setup
+	// only — /api/setup serves data only.
+	mountSetupAPI := func(r chi.Router) {
 		r.Get("/devices", server.HandleListDiscoveredDevices)
 		r.Post("/devices", server.HandleAddManualDevice)
 		r.Delete("/devices/{deviceId}", server.HandleRemoveDevice)
@@ -1352,6 +1546,12 @@ func setupRouter(server *handlers.Server, stockholmHandler *stockholm.Handler) *
 		r.Post("/reboot/{deviceId}", server.HandleRebootDevice)
 		r.Get("/account-id-suggestions/{deviceId}", server.HandleAccountIDSuggestions)
 		r.Post("/pair-account/{deviceId}", server.HandlePairAccount)
+		// Passive peer-reachability probe. Registers a device IP with the
+		// in-process observer, nudges :8090/swUpdateCheck, and waits for any
+		// inbound from that IP. Used post-migration where the daemon caches its
+		// swUpdateUrl at boot and the active round-trip can't reach it without a
+		// reboot.
+		r.Post("/peer-probe/{deviceId}", server.HandlePeerProbe)
 		r.Post("/trust-ca/{deviceId}", server.HandleTrustCACert)
 		r.Post("/ensure-remote-services/{deviceId}", server.HandleEnsureRemoteServices)
 		r.Post("/remove-remote-services/{deviceId}", server.HandleRemoveRemoteServices)
@@ -1384,14 +1584,38 @@ func setupRouter(server *handlers.Server, stockholmHandler *stockholm.Handler) *
 		r.Post("/health/dns-path-probe", server.HandleDNSPathProbe)
 		r.Get("/export/diagnostic", server.HandleExportDiagnostic)
 		r.Get("/logs", server.HandleGetLogs)
+	}
 
-		// Serve Stockholm setup wizard pages for paths not matched by the management API.
-		// The Stockholm frontend has a setup/ directory that must be accessible at /setup/*.
+	r.Route("/setup", func(r chi.Router) {
+		// Legacy admin API: same handlers as /api/setup, plus the deprecation
+		// signal (counts + one-time warning). Scoped to the API routes only — the
+		// Stockholm wizard catch-all below is frontend, not a deprecated API path.
+		r.Group(func(r chi.Router) {
+			r.Use(server.DeprecatedRouteMiddleware)
+			mountSetupAPI(r)
+		})
+
+		// Serve Stockholm setup wizard pages for paths not matched by the
+		// management API. The Stockholm frontend has a setup/ directory that must
+		// be accessible at /setup/*. Frontend-only — not mirrored under /api/setup.
 		if stockholmHandler != nil {
 			r.Get("/*", stockholmHandler.HandleStatic)
 			r.Get("/", stockholmHandler.HandleStatic)
 		}
 	})
+
+	r.Route("/api/setup", func(r chi.Router) {
+		mountSetupAPI(r)
+	})
+
+	// Embedded web UI: control API under /api/control and the SPA under /app
+	// (LAN-trust, like /setup). Additive — nothing here collides with the
+	// service's own /, /health, or /static. The web app shares the service's
+	// discovery (nil discovery service here), so it runs no mDNS of its own.
+	// Skipped when nil, e.g. unit tests that only exercise the service surface.
+	if webApp != nil {
+		webApp.MountWeb(r, nil)
+	}
 
 	if stockholmHandler != nil {
 		stockholmHandler.Mount(r)

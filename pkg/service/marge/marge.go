@@ -1850,7 +1850,7 @@ func classifyLearnedSource(src *models.ConfiguredSource, sourceID, location, sou
 		classifyAsSpotify(src)
 	case strings.Contains(location, "amazon") || sourceID == constants.ProviderAmazon || sourceProviderID == strconv.Itoa(constants.AmazonProviderID):
 		classifyAsAmazon(src)
-	case sourceProviderID == strconv.Itoa(constants.RadioBrowserProviderID) || strings.Contains(location, "/soundtouch/stations/byuuid/"):
+	case sourceProviderID == strconv.Itoa(constants.RadioBrowserProviderID) || strings.Contains(location, "/stations/byuuid/"):
 		classifyAsRadioBrowser(src)
 	}
 	// If we can't classify, leave SourceKey.Type empty so the canonical-by-ID
@@ -2296,6 +2296,30 @@ func AddSourceToAccount(ds *datastore.DataStore, account string, sourceXML []byt
 	header := constants.XMLHeader
 
 	return append([]byte(header), res...), nil
+}
+
+// RemoveSourceFromAccount deletes the source with the given id from every device
+// of the account, mirroring AddSource (which fans a source out to all devices).
+// Idempotent: a source absent from a device is silently skipped.
+func RemoveSourceFromAccount(ds *datastore.DataStore, account, sourceID string) error {
+	devicesDir := ds.AccountDevicesDir(account)
+
+	entries, err := ds.ReadDirUnderBase(devicesDir)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		if delErr := ds.DeleteSourceByID(account, entry.Name(), sourceID); delErr != nil {
+			return delErr
+		}
+	}
+
+	return nil
 }
 
 // AddSource adds a new music source to the account and returns the generated source ID.

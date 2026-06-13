@@ -16,6 +16,23 @@ services:
       - AMAZON_CLIENT_SECRET=mock-amazon-secret
       - AMAZON_TOKEN_URL=http://amazon-mock:8080/auth/o2/token
       - AMAZON_PROFILE_URL=http://amazon-mock:8080/user/profile
+      - TUNEIN_OPML_URL=http://tunein-mock:8080
+      - TUNEIN_API_URL=http://tunein-mock:8080
+    # Start only once every mock is actually listening (the mocks are `go run`,
+    # so cold compilation can take a while); see depends_on below.
+    depends_on:
+      spotify-mock:
+        condition: service_healthy
+      amazon-mock:
+        condition: service_healthy
+      tunein-mock:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8000/health"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 3s
 
   spotify-mock:
     image: golang:1.26.4-alpine
@@ -28,6 +45,12 @@ services:
       - "8081:8080"
     networks:
       - soundtouch-test-net
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 3s
 
   amazon-mock:
     image: golang:1.26.4-alpine
@@ -40,6 +63,30 @@ services:
       - "8082:8080"
     networks:
       - soundtouch-test-net
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 3s
+
+  tunein-mock:
+    image: golang:1.26.4-alpine
+    container_name: tunein-mock
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: go run ./cmd/mock-tunein/main.go -port 8080
+    ports:
+      - "8083:8080"
+    networks:
+      - soundtouch-test-net
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 3s
 
 networks:
   soundtouch-test-net:

@@ -316,7 +316,7 @@ avahi-resolve -n soundtouch.local
 ```go
 nowPlaying, err := client.GetNowPlaying()
 if err == nil {
-    fmt.Printf("Status: %s, Source: %s\n", 
+    fmt.Printf("Status: %s, Source: %s\n",
         nowPlaying.PlayStatus, nowPlaying.Source)
 }
 ```
@@ -326,7 +326,7 @@ if err == nil {
 sources, err := client.GetSources()
 if err == nil {
     for _, source := range sources.Sources {
-        fmt.Printf("Source: %s, Status: %s\n", 
+        fmt.Printf("Source: %s, Status: %s\n",
             source.Source, source.Status)
     }
 }
@@ -490,7 +490,7 @@ if err == nil {
 // Only zone master can control volume
 if zoneStatus == "MEMBER" {
     fmt.Println("Device is zone member - only master controls volume")
-    
+
     // Find and use master device
     zone, _ := client.GetZone()
     // Connect to master device using zone.Master ID
@@ -507,7 +507,7 @@ client.DecreaseVolume(5)
 3. **Check Current Volume:**
 ```go
 volume, _ := client.GetVolume()
-fmt.Printf("Target: %d, Actual: %d, Muted: %t\n", 
+fmt.Printf("Target: %d, Actual: %d, Muted: %t\n",
     volume.TargetVolume, volume.ActualVolume, volume.Muted)
 ```
 
@@ -586,7 +586,7 @@ curl http://192.0.2.10:8090/playNotification
 **Causes & Solutions:**
 
 #### 1. **Device Model Compatibility**
-- ✅ **Supported**: SoundTouch 10 (ST-10), SoundTouch 20 (ST-20)  
+- ✅ **Supported**: SoundTouch 10 (ST-10), SoundTouch 20 (ST-20)
 - ❌ **Not Supported**: SoundTouch 300 (ST-300), older models
 
 **Solution:** Verify device model with:
@@ -619,11 +619,11 @@ Only one notification can play at a time. Wait a few seconds and retry.
 #### 2. **Check Current Playback Status**
 ```go
 nowPlaying, _ := client.GetNowPlaying()
-fmt.Printf("Current source: %s, status: %s\n", 
+fmt.Printf("Current source: %s, status: %s\n",
     nowPlaying.Source, nowPlaying.PlayStatus)
 ```
 
-### ❌ soundtouch-web TTS fails with `certificate signed by unknown authority`
+### ❌ soundtouch-player TTS fails with `certificate signed by unknown authority`
 
 **Symptoms:**
 ```
@@ -632,17 +632,17 @@ tls: failed to verify certificate: x509: certificate signed by unknown authority
 ```
 
 **Cause:** TTS synthesis and the Bose app key live in `soundtouch-service`,
-so `soundtouch-web` proxies the "Speak" action to the service. When the
+so `soundtouch-player` proxies the "Speak" action to the service. When the
 service is served over HTTPS with its own self-signed certificate (the
-default — see `GET /setup/ca.crt`), `soundtouch-web` doesn't trust that CA out
+default — see `GET /setup/ca.crt`), `soundtouch-player` doesn't trust that CA out
 of the box, so the proxied call fails verification.
 
-**Solution:** start `soundtouch-web` with `--service-ca` pointing at the
+**Solution:** start `soundtouch-player` with `--service-ca` pointing at the
 service's CA certificate (its `<dataDir>/certs/ca.crt`, or the file served at
 `/setup/ca.crt`):
 
 ```bash
-soundtouch-web \
+soundtouch-player \
   --service-url https://soundtouch.fritz.box \
   --service-ca /path/to/certs/ca.crt
 ```
@@ -651,7 +651,7 @@ soundtouch-web \
 system trust store, so a service URL that uses a publicly trusted certificate
 needs no flag.
 
-### ❌ soundtouch-web TTS returns `host ... is not a known device`
+### ❌ soundtouch-player TTS returns `host ... is not a known device`
 
 **Symptoms:**
 ```
@@ -664,8 +664,8 @@ verbatim from the request).
 
 **Solution:** make sure the target speaker is known to `soundtouch-service`
 (discovered or manually added, and migrated to AfterTouch), not only to
-`soundtouch-web`'s own discovery. Check with `GET /setup/devices` on the
-service. (Recent `soundtouch-web` versions identify the speaker by its device
+`soundtouch-player`'s own discovery. Check with `GET /setup/devices` on the
+service. (Recent `soundtouch-player` versions identify the speaker by its device
 ID and a bare IP, so this error otherwise indicates the speaker simply isn't
 registered with the service.)
 
@@ -880,7 +880,7 @@ config.Logger = &client.DefaultLogger{}  // Or custom logger
 # Capture SoundTouch traffic
 sudo tcpdump -i any host 192.0.2.100 and port 8090
 
-# Monitor WebSocket traffic  
+# Monitor WebSocket traffic
 sudo tcpdump -i any host 192.0.2.100 and port 8080
 
 # HTTP debugging with curl
@@ -1024,7 +1024,7 @@ Use this checklist to systematically troubleshoot issues:
 
 ### Network Connectivity
 - [ ] Device power LED is solid white
-- [ ] Both devices on same network subnet  
+- [ ] Both devices on same network subnet
 - [ ] Firewall allows ports 8090 (HTTP) and 8080 (WebSocket)
 - [ ] Can ping device IP address
 - [ ] Can telnet to ports 8090 and 8080
@@ -1041,7 +1041,7 @@ Use this checklist to systematically troubleshoot issues:
 - [ ] Proper error handling
 - [ ] Resource cleanup (defer statements)
 
-### Multiroom Specific  
+### Multiroom Specific
 - [ ] All devices support multiroom
 - [ ] Device IDs are correct (from GetDeviceInfo)
 - [ ] Devices on same network subnet
@@ -1121,10 +1121,10 @@ In `vi`, find `block_remote_traffic()`. Press `i` to enter insert mode. After th
 first `done` line in that function, add:
 
 ```
-echo -A INPUT -i $IFACE -s 192.168.10.0/24 -j ACCEPT
+echo -A INPUT -i $IFACE -s 192.0.2.0/24 -j ACCEPT
 ```
 
-Replace `192.168.10.0/24` with the subnet your AfterTouch host is on. Press `Esc`,
+Replace `192.0.2.0/24` with the subnet your AfterTouch host is on. Press `Esc`,
 type `:wq`, press `Enter`, then reboot:
 
 ```bash

@@ -10,72 +10,111 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// Mount registers all routes (static, WebSocket, REST) on r. The
-// discovery service is reused by the POST /api/discover handler to
-// trigger an on-demand sweep — pass the same instance you used for
-// startup discovery so settings (interface, timeout) stay consistent.
-func (app *WebApp) Mount(r chi.Router, discoveryService *discovery.UnifiedDiscoveryService) {
-	// Static assets (embedded in binary)
+// MountWeb registers the portable soundtouch-player surface on r: the embedded
+// assets (/app/static/*), the control API (/api/control/*), and the SPA
+// (/app/*). It is self-contained under /api/control and /app, registering
+// nothing outside those subtrees (no /, no /health), so it can be mounted into
+// another router (e.g. soundtouch-service) additively. The discovery service
+// is reused by POST /api/control/discover for on-demand sweeps; pass the same
+// instance used for startup discovery so settings (interface, timeout) stay
+// consistent.
+func (app *WebApp) MountWeb(r chi.Router, discoveryService *discovery.UnifiedDiscoveryService) {
+	// Embedded assets, served under the /app subtree so nothing contends with a
+	// host router's own /static (e.g. the Stockholm bridge's root catch-all).
 	subFS, _ := fs.Sub(StaticFS, "static")
-	r.Get("/static/*", http.StripPrefix("/static", http.FileServer(http.FS(subFS))).ServeHTTP)
+	r.Get("/app/static/*", http.StripPrefix("/app/static", http.FileServer(http.FS(subFS))).ServeHTTP)
 
-	// WebSocket endpoint
-	r.Get("/ws", app.HandleWebSocket)
+	// Player / control API. Per #451 this is the post-merge canonical shape:
+	// device-scoped actions nest under devices/{id}/, so every direct child of
+	// /api/control is a literal namespace (version, ws, discover, devices,
+	// providers) — no static-vs-param sibling, so routing never depends on
+	// chi's static-over-param precedence.
+	r.Route("/api/control", func(r chi.Router) {
+		r.Get("/version", app.HandleAPIVersion)
 
-	// Health / liveness
-	r.Get("/health", app.HandleHealth)
+		// App-wide event stream: device list, discovery status, per-device
+		// status updates. The read/event half of the control surface (the
+		// per-device socket lives at devices/{id}/ws).
+		r.Get("/ws", app.HandleWebSocket)
 
-	// API endpoints
-	r.Get("/api/devices", app.HandleAPIDevices)
-	r.Get("/api/device/{id}", app.HandleAPIDevice)
-	r.Get("/api/version", app.HandleAPIVersion)
-	r.Post("/api/discover", func(w http.ResponseWriter, r *http.Request) {
-		app.HandleAPIDiscover(w, r)
+		r.Post("/discover", func(w http.ResponseWriter, r *http.Request) {
+			app.HandleAPIDiscover(w, r)
 
-		// Trigger discovery
-		//nolint:contextcheck // Context is created within goroutine
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
+			// Trigger discovery
+			//nolint:contextcheck // Context is created within goroutine
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
 
-			app.BroadcastDiscoveryStatus("starting", app.DeviceCount())
+				app.BroadcastDiscoveryStatus("starting", app.DeviceCount())
 
-			app.DiscoverDevices(ctx, discoveryService)
+				app.DiscoverDevices(ctx, discoveryService)
 
-			app.BroadcastDiscoveryStatus("completed", app.DeviceCount())
-			app.BroadcastDeviceList()
-		}()
-	})
+				app.BroadcastDiscoveryStatus("completed", app.DeviceCount())
+				app.BroadcastDeviceList()
+			}()
+		})
 
-	// Device control endpoints (GET for most actions, POST for volume/bass)
-	r.Get("/api/control/{id}/{action}", app.HandleAPIControl)
-	r.Post("/api/control/{id}/{action}", app.HandleAPIControl)
+		// One /devices subrouter holds both the list and the /{id} subtree (the
+		// issue #285 single-subrouter lesson). Under /{id} every child is a
+		// literal action.
+		r.Route("/devices", func(r chi.Router) {
+			r.Get("/", app.HandleAPIDevices)
 
-	// TuneIn browse, search, and playback
-	r.Get("/api/tunein/search", app.HandleTuneInSearch)
-	r.Get("/api/tunein/search/next", app.HandleTuneInSearchNext)
-	r.Get("/api/tunein/navigate", app.HandleTuneInNavigate)
-	r.Get("/api/tunein/navigate/*", app.HandleTuneInNavigate)
-	r.Post("/api/tunein/play/{id}", app.HandlePlayTuneIn)
+			r.Route("/{id}", func(r chi.Router) {
+				r.Get("/", app.HandleAPIDevice)
+				r.Delete("/", app.HandleDeleteDevice)
+				r.Post("/key/{key}", app.HandleDeviceKey)
+				r.Post("/volume/{volume}", app.HandleDirectVolumeControl)
+				r.Post("/power", app.HandleDevicePower)
+				r.Get("/power-status", app.HandleDevicePowerStatus)
+				r.Get("/recents", app.HandleDeviceRecents)
+				// Low-level "play this ContentItem" primitive (not a provider).
+				r.Post("/play", app.HandleDevicePlay)
+				// Generic key / preset / source / bass actions.
+				r.Get("/action/{action}", app.HandleAPIControl)
+				r.Post("/action/{action}", app.HandleAPIControl)
+				r.Get("/ws", app.HandleDeviceWebSocket)
 
-	// Enhanced device control endpoints
-	r.Post("/api/device-key/{id}/{key}", app.HandleDeviceKey)
-	r.Post("/api/device-volume/{id}/{volume}", app.HandleDirectVolumeControl)
-	r.Post("/api/device-power/{id}", app.HandleDevicePower)
-	r.Get("/api/device-power-status/{id}", app.HandleDevicePowerStatus)
-	r.Get("/api/device-recents/{id}", app.HandleDeviceRecents)
-	r.Post("/api/device-play/{id}", app.HandleDevicePlay)
-	r.Get("/api/zone/{id}", app.HandleGetZone)
-	r.Post("/api/zone/{id}/add/{slaveId}", app.HandleZoneAdd)
-	r.Post("/api/zone/{id}/remove/{slaveId}", app.HandleZoneRemove)
-	r.Post("/api/zone/{id}/dissolve", app.HandleZoneDissolve)
-	r.Post("/api/zone/{id}/leave", app.HandleZoneLeave)
-	r.Get("/api/device-ws/{id}", app.HandleDeviceWebSocket)
+				r.Route("/library", func(r chi.Router) {
+					r.Get("/servers", app.HandleDeviceLibraryServers)
+					r.Post("/servers", app.HandleAddLibraryServer)
+					r.Delete("/servers/{account}", app.HandleRemoveLibraryServer)
+					r.Get("/browse", app.HandleLibraryBrowse)
+					r.Post("/play", app.HandlePlayLibrary)
+				})
 
-	// RadioBrowser search
-	r.Get("/api/radiobrowser/search", app.HandleRadioBrowserSearch)
-	r.Post("/api/radiobrowser/play/{id}", app.HandlePlayRadioBrowser)
+				r.Route("/zone", func(r chi.Router) {
+					r.Get("/", app.HandleGetZone)
+					r.Post("/add/{slaveId}", app.HandleZoneAdd)
+					r.Post("/remove/{slaveId}", app.HandleZoneRemove)
+					r.Post("/dissolve", app.HandleZoneDissolve)
+					r.Post("/leave", app.HandleZoneLeave)
+				})
 
+				// Play a result from a content provider on this device.
+				// Browsable providers (tunein, radiobrowser) take a catalog item;
+				// input providers (url, tts) take the raw input.
+				r.Route("/providers", func(r chi.Router) {
+					r.Post("/tunein/play", app.HandlePlayTuneIn)
+					r.Post("/radiobrowser/play", app.HandlePlayRadioBrowser)
+					r.Post("/url/play", app.HandlePlayURL)
+					// Proxied to the AfterTouch service's /api/setup/tts/speak.
+					r.Post("/tts/play", app.HandleAPISpeakText)
+				})
+			})
+		})
+
+		// Provider browse / search (global, not device-scoped). Only browsable
+		// providers (a catalog you search/navigate) appear here; input
+		// providers (url, tts) exist solely as a device play above.
+		r.Route("/providers", func(r chi.Router) {
+			r.Route("/tunein", func(r chi.Router) {
+				r.Get("/search", app.HandleTuneInSearch)
+				r.Get("/search/next", app.HandleTuneInSearchNext)
+				r.Get("/navigate", app.HandleTuneInNavigate)
+				r.Get("/navigate/*", app.HandleTuneInNavigate)
+			})
 	// DeezerBrowser search
 	r.Get("/api/deezer/search", app.HandleDeezerSearch)
 	r.Get("/api/deezer/search/{type}", app.HandleDeezerSearch)
@@ -87,9 +126,45 @@ func (app *WebApp) Mount(r chi.Router, discoveryService *discovery.UnifiedDiscov
 	// Custom URL playback
 	r.Post("/api/play-url/{id}", app.HandlePlayURL)
 
-	// Text-to-speech (proxied to the AfterTouch service's /setup/tts/speak)
-	r.Post("/api/device-speak/{id}", app.HandleAPISpeakText)
+			r.Route("/radiobrowser", func(r chi.Router) {
+				r.Get("/search", app.HandleRadioBrowserSearch)
+			})
 
+			r.Route("/library", func(r chi.Router) {
+				r.Get("/servers", app.HandleDiscoverLibraryServers)
+			})
+		})
+	})
+
+	// SPA — served under /app/*. The client navigates via component state
+	// rather than the URL, so these entries only ensure deep links and
+	// refreshes return index.html instead of 404. Per #451 this keeps the
+	// whole web UI under one /app subtree, so folding -web into -service is an
+	// additive mount.
+	r.Get("/app", app.serveIndex)
+	r.Get("/app/devices", app.serveIndex)
+	r.Get("/app/device/*", app.serveIndex)
+	r.Get("/app/tunein", app.serveIndex)
+	r.Get("/app/radiobrowser", app.serveIndex)
+	r.Get("/app/playurl", app.serveIndex)
+	r.Get("/app/tts", app.serveIndex)
+	r.Get("/app/library", app.serveIndex)
+}
+
+// Mount is the standalone soundtouch-player entry point: the portable web surface
+// (see MountWeb) plus the standalone-only liveness endpoint and a / redirect
+// into the app. soundtouch-service does not call this — it mounts MountWeb and
+// keeps its own / (landing page) and /health.
+func (app *WebApp) Mount(r chi.Router, discoveryService *discovery.UnifiedDiscoveryService) {
+	app.MountWeb(r, discoveryService)
+
+	// Health / liveness (standalone only).
+	r.Get("/health", app.HandleHealth)
+
+	// Standalone convenience: the bare root jumps into the app.
+	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/app", http.StatusFound)
+	})
 	// SPA routes — serve index.html for client-side routing
 	r.Get("/", app.serveIndex)
 	r.Get("/devices", app.serveIndex)

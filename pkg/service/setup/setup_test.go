@@ -280,14 +280,14 @@ func TestGetLiveDeviceInfo(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/xml")
 		_, _ = fmt.Fprint(w, `<?xml version="1.0" encoding="UTF-8"?>
-<info deviceID="08DF1F0BA325">
+<info deviceID="AABBCCDDEE0A">
     <name>Test Speaker</name>
     <type>SoundTouch 20</type>
     <components>
         <component>
             <componentCategory>SCM</componentCategory>
             <softwareVersion>19.0.5</softwareVersion>
-            <serialNumber>08DF1F0BA325</serialNumber>
+            <serialNumber>AABBCCDDEE0A</serialNumber>
         </component>
     </components>
 </info>`)
@@ -313,8 +313,8 @@ func TestGetLiveDeviceInfo(t *testing.T) {
 		t.Errorf("Expected SoftwareVer '19.0.5', got '%s'", info.SoftwareVer)
 	}
 
-	if info.SerialNumber != "08DF1F0BA325" {
-		t.Errorf("Expected SerialNumber '08DF1F0BA325', got '%s'", info.SerialNumber)
+	if info.SerialNumber != "AABBCCDDEE0A" {
+		t.Errorf("Expected SerialNumber 'AABBCCDDEE0A', got '%s'", info.SerialNumber)
 	}
 }
 
@@ -1441,7 +1441,7 @@ func TestBackupConfigOffDevice(t *testing.T) {
 
 	m := NewManager("http://localhost:8000", ds, nil)
 
-	serial := "08DF1F0BA325"
+	serial := "AABBCCDDEE0A"
 	accountID := "1000001"
 
 	// Mock info server
@@ -2016,5 +2016,71 @@ func TestMigrateSpeaker_ResolvBlocking(t *testing.T) {
 		strings.Contains(err.Error(), "port 53 is required") ||
 		strings.Contains(err.Error(), "not actually running")) {
 		t.Errorf("Did not expect pre-flight DNS errors, got %v", err)
+	}
+}
+
+// TestMigrateViaXML_ReappliesBoseURLsOverTelnet verifies the #471 follow-up:
+// after an XML migration, the runtime boseurls layer is re-applied over telnet
+// so it matches the persisted config (otherwise the preflight cross-check keeps
+// warning about the enable-ssh placeholder until a reboot).
+func TestMigrateViaXML_ReappliesBoseURLsOverTelnet(t *testing.T) {
+	cm := certmanager.NewCertificateManager(filepath.Join(t.TempDir(), "certs"))
+	if err := cm.EnsureCA(); err != nil {
+		t.Fatalf("EnsureCA: %v", err)
+	}
+
+	target := "https://192.0.2.10:8443"
+	m := NewManager(target, nil, cm)
+	m.NewSSH = func(string) SSHClient {
+		return &mockSSH{runFunc: func(string) (string, error) { return "", nil }}
+	}
+
+	ft := &fakeTelnet{banner: "->", responses: map[string]string{}}
+	m.NewTelnet = func(string) TelnetClient { return ft }
+
+	if _, err := m.MigrateSpeaker("192.0.2.10", target, "", nil, MigrationMethodXML); err != nil {
+		t.Fatalf("MigrateSpeaker: %v", err)
+	}
+
+	want := `envswitch boseurls set "` + target + `" "` + target + `/updates/soundtouch"`
+
+	var found bool
+	for _, c := range ft.commands {
+		if c == want {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Errorf("expected boseurls re-apply %q after XML migration; sent: %v", want, ft.commands)
+	}
+}
+
+// TestMigrateViaXML_BoseURLsResyncIsBestEffort verifies that a telnet failure
+// during the post-migration boseurls re-apply does not fail the migration (a
+// device reboot still reconciles the runtime layer).
+func TestMigrateViaXML_BoseURLsResyncIsBestEffort(t *testing.T) {
+	cm := certmanager.NewCertificateManager(filepath.Join(t.TempDir(), "certs"))
+	if err := cm.EnsureCA(); err != nil {
+		t.Fatalf("EnsureCA: %v", err)
+	}
+
+	target := "https://192.0.2.10:8443"
+	m := NewManager(target, nil, cm)
+	m.NewSSH = func(string) SSHClient {
+		return &mockSSH{runFunc: func(string) (string, error) { return "", nil }}
+	}
+	m.NewTelnet = func(string) TelnetClient {
+		return &fakeTelnet{dialErr: errors.New("connection refused")}
+	}
+
+	logs, err := m.MigrateSpeaker("192.0.2.10", target, "", nil, MigrationMethodXML)
+	if err != nil {
+		t.Fatalf("MigrateSpeaker should not fail when the telnet re-sync fails: %v", err)
+	}
+
+	if !strings.Contains(logs, "could not re-sync boseurls over telnet") {
+		t.Errorf("expected a best-effort note about the failed telnet re-sync; logs:\n%s", logs)
 	}
 }

@@ -72,6 +72,9 @@ func (s *Server) HandleAddManualDevice(w http.ResponseWriter, r *http.Request) {
 	s.handleDiscoveredDevice(d)
 	s.mergeOverlappingDevices()
 
+	// Let any observer (e.g. the embedded web UI) re-sync from the datastore.
+	s.notifyDevicesChanged()
+
 	w.Header().Set("Content-Type", "application/json")
 
 	if err := json.NewEncoder(w).Encode(map[string]bool{"ok": true}); err != nil {
@@ -98,6 +101,34 @@ func (s *Server) HandleGetDiscoveryStatus(w http.ResponseWriter, _ *http.Request
 	}
 }
 
+// RemoveDeviceByID removes the device with the given device ID (MAC) from
+// the datastore, searching across all accounts. It returns whether a
+// matching device was found. On a successful removal it notifies
+// observers (e.g. the embedded web UI) so they re-sync — the symmetric
+// counterpart to the notify in HandleAddManualDevice.
+func (s *Server) RemoveDeviceByID(deviceID string) (bool, error) {
+	devices, err := s.ds.ListAllDevices()
+	if err != nil {
+		return false, err
+	}
+
+	for i := range devices {
+		if devices[i].DeviceID == deviceID {
+			if err := s.ds.RemoveDevice(devices[i].AccountID, devices[i].DeviceID); err != nil {
+				return false, err
+			}
+
+			// Let any observer (e.g. the embedded web UI) re-sync from the
+			// datastore so the removal propagates to the player UI.
+			s.notifyDevicesChanged()
+
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
 // HandleRemoveDevice removes a device from the datastore.
 func (s *Server) HandleRemoveDevice(w http.ResponseWriter, r *http.Request) {
 	deviceId := chi.URLParam(r, "deviceId")
@@ -106,27 +137,10 @@ func (s *Server) HandleRemoveDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Find which account this device belongs to.
-	devices, err := s.ds.ListAllDevices()
+	found, err := s.RemoveDeviceByID(deviceId)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
-	}
-
-	var found bool
-
-	for i := range devices {
-		if devices[i].DeviceID == deviceId {
-			err = s.ds.RemoveDevice(devices[i].AccountID, devices[i].DeviceID)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-
-			found = true
-
-			break
-		}
 	}
 
 	if !found {
@@ -174,6 +188,8 @@ func (s *Server) HandleGetSettings(w http.ResponseWriter, _ *http.Request) {
 	s.mu.RUnlock()
 
 	dnsRunning, actualBind := s.GetDNSRunning()
+
+	defaultLanding := s.defaultLanding()
 
 	var serverURLResolvedIP, serverURLResolveError string
 
@@ -252,6 +268,7 @@ func (s *Server) HandleGetSettings(w http.ResponseWriter, _ *http.Request) {
 		"tts_language":                  ttsLanguage,
 		"tts_voice":                     ttsVoice,
 		"tts_volume":                    ttsVolume,
+		"default_landing":               defaultLanding,
 	}); err != nil {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
@@ -282,9 +299,19 @@ func (s *Server) HandleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		TTSVoice            string         `json:"tts_voice"`
 		TTSVolume           int            `json:"tts_volume"`
 		TLSExtraHosts       *[]string      `json:"tls_extra_hosts"`
+		DefaultLanding      string         `json:"default_landing"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&settings); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Normalise + validate the landing choice. Empty means "chooser".
+	defaultLanding := strings.ToLower(strings.TrimSpace(settings.DefaultLanding))
+	switch defaultLanding {
+	case "", "chooser", "app", "admin":
+	default:
+		http.Error(w, "Invalid default_landing: must be chooser, app, or admin", http.StatusBadRequest)
 		return
 	}
 
@@ -293,6 +320,11 @@ func (s *Server) HandleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		// try to fall back to system DNS. We only log it if both are empty later.
 		log.Printf("[DNS] DNS Discovery enabled without explicit upstreams, will try system DNS.")
 	}
+
+	// Strip a trailing slash before validating/persisting: it would otherwise
+	// flow into the BMX registry base and produce "//bmx/..." playback requests
+	// the router 404s.
+	settings.ServerURL = NormalizeServerURL(settings.ServerURL)
 
 	// Validate server_url: the same value the DNS server uses to derive its
 	// intercept IP. Reject anything that does not resolve to a routable IP so
@@ -401,6 +433,7 @@ func (s *Server) HandleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		TTSVoice:            s.ttsVoice,
 		TTSVolume:           s.ttsVolume,
 		TLSExtraHosts:       resolvedTLSExtraHosts,
+		DefaultLanding:      defaultLanding,
 	})
 
 	dnsEnabled := s.dnsEnabled
