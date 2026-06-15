@@ -12,6 +12,7 @@ package fakespeaker
 import (
 	"context"
 	"embed"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -19,6 +20,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/gesellix/bose-soundtouch/pkg/models"
 )
 
 //go:embed testdata/info.xml testdata/presets.xml testdata/recents.xml testdata/networkinfo.xml testdata/sources.xml testdata/supportedurls.xml testdata/now_playing.xml
@@ -319,46 +322,37 @@ func handleRemoveGroup(w http.ResponseWriter, r *http.Request) {
 	serveEmptyGroup(w, r)
 }
 
-// buildAddGroupResponse inserts <status>GROUP_OK</status> before the
-// closing </group> tag of the posted body. If the body is empty or does
-// not contain </group>, it falls back to a minimal canned success
-// response so callers still see a 200 + parseable XML.
+// buildAddGroupResponse echoes the posted group payload back with a
+// <status>GROUP_OK</status> appended, mimicking a real speaker's success
+// response. The body is parsed into typed fields and re-marshalled (rather
+// than splicing raw bytes) so every echoed value is XML-escaped. If the body
+// is empty or unparseable, it falls back to a minimal canned success response
+// so callers still see a 200 + parseable XML.
 func buildAddGroupResponse(posted []byte) []byte {
-	const closeTag = "</group>"
-
-	const okFragment = "    <status>GROUP_OK</status>\n"
+	cannedOK := []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<group>
+    <status>GROUP_OK</status>
+</group>
+`)
 
 	if len(posted) == 0 {
-		return []byte(`<?xml version="1.0" encoding="UTF-8"?>` + "\n<group>\n" + okFragment + closeTag + "\n")
+		return cannedOK
 	}
 
-	idx := indexOfClose(posted, closeTag)
-	if idx < 0 {
-		return []byte(`<?xml version="1.0" encoding="UTF-8"?>` + "\n<group>\n" + okFragment + closeTag + "\n")
+	// Parse into the canonical request type and re-marshal it (rather than
+	// splicing the raw bytes) so every echoed value is XML-escaped and the
+	// fake stays in lock-step with whatever fields the client actually sends.
+	var in models.Group
+	if err := xml.Unmarshal(posted, &in); err != nil {
+		return cannedOK
 	}
 
-	out := make([]byte, 0, len(posted)+len(okFragment))
-	out = append(out, posted[:idx]...)
-	out = append(out, []byte(okFragment)...)
-	out = append(out, posted[idx:]...)
+	in.Status = "GROUP_OK"
 
-	return out
-}
-
-// indexOfClose returns the index of the last occurrence of needle in b,
-// or -1 if not present. We scan from the right because real-world
-// payloads can technically nest <group> blocks (e.g. inside <roles>),
-// even though the documented stereo-pair payload does not.
-func indexOfClose(b []byte, needle string) int {
-	if len(needle) == 0 || len(b) < len(needle) {
-		return -1
+	data, err := xml.Marshal(in)
+	if err != nil {
+		return cannedOK
 	}
 
-	for i := len(b) - len(needle); i >= 0; i-- {
-		if string(b[i:i+len(needle)]) == needle {
-			return i
-		}
-	}
-
-	return -1
+	return append([]byte(`<?xml version="1.0" encoding="UTF-8"?>`+"\n"), data...)
 }

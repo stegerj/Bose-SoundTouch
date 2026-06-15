@@ -4,6 +4,8 @@ package marge
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/xml"
 	"fmt"
 	"log"
@@ -223,6 +225,27 @@ func (p presetParityXML) MarshalXML(e *xml.Encoder, start xml.StartElement) erro
 	return e.EncodeElement(Alias(p), start)
 }
 
+// recentSourceUsername returns the account/username to emit in a recent's
+// <source> block. The account (e.g. STORED_MUSIC's "<UDN>/0") is persisted in
+// SourceKey.Account, not Username, which does not round-trip through the
+// datastore — so fall back to SourceKeyAccount. Without this, STORED_MUSIC
+// media-server recents get an empty <username>, the speaker falls back to the
+// provider id (e.g. "7") as the account, and replay fails with INVALID_SOURCE.
+// Mirrors the fallback in mapToFullResponseSource; TuneIn / Internet Radio /
+// Local Internet Radio intentionally keep an empty username (parity).
+func recentSourceUsername(src *models.ConfiguredSource) string {
+	if src.Username != "" {
+		return src.Username
+	}
+
+	switch src.SourceKeyType {
+	case constants.ProviderTunein, constants.ProviderInternetRadio, constants.ProviderLocalInternetRadio:
+		return ""
+	}
+
+	return src.SourceKeyAccount
+}
+
 func prepareRecentItemParitySource(src *models.ConfiguredSource) *models.RecentItemParitySource {
 	sxml := &models.RecentItemParitySource{
 		ID:               src.ID,
@@ -232,7 +255,7 @@ func prepareRecentItemParitySource(src *models.ConfiguredSource) *models.RecentI
 		Name:             src.DisplayName,
 		SourceProviderID: src.SourceProviderID,
 		SourceName:       src.SourceName,
-		Username:         src.Username,
+		Username:         recentSourceUsername(src),
 		Credential: &models.RecentItemParityCredential{
 			Type:  src.Credential.Type,
 			Value: src.Credential.Value,
@@ -593,20 +616,41 @@ func recentToXML(r *models.ServiceRecent, matchingSrc *models.ConfiguredSource) 
 
 // ProviderSettingsToXML generates provider settings XML for the specified account.
 func ProviderSettingsToXML(account string) string {
-	return constants.XMLHeader + fmt.Sprintf(`<providerSettings>
-    <providerSetting>
-      <boseId>%s</boseId>
-      <keyName>ELIGIBLE_FOR_TRIAL</keyName>
-      <value>false</value>
-      <providerId>14</providerId>
-    </providerSetting>
-    <providerSetting>
-      <boseId>%s</boseId>
-      <keyName>STREAMING_QUALITY</keyName>
-      <value>2</value>
-      <providerId>15</providerId>
-    </providerSetting>
-  </providerSettings>`, EscapeXML(account), EscapeXML(account))
+	type providerSetting struct {
+		BoseID     string `xml:"boseId"`
+		KeyName    string `xml:"keyName"`
+		Value      string `xml:"value"`
+		ProviderID string `xml:"providerId"`
+	}
+
+	type providerSettings struct {
+		XMLName  xml.Name          `xml:"providerSettings"`
+		Settings []providerSetting `xml:"providerSetting"`
+	}
+
+	payload := providerSettings{
+		Settings: []providerSetting{
+			{
+				BoseID:     account,
+				KeyName:    "ELIGIBLE_FOR_TRIAL",
+				Value:      "false",
+				ProviderID: "14",
+			},
+			{
+				BoseID:     account,
+				KeyName:    "STREAMING_QUALITY",
+				Value:      "2",
+				ProviderID: "15",
+			},
+		},
+	}
+
+	out, err := xml.Marshal(payload)
+	if err != nil {
+		return constants.XMLHeader + `<providerSettings></providerSettings>`
+	}
+
+	return constants.XMLHeader + string(out)
 }
 
 // SoftwareUpdateToXML generates software update configuration XML.
@@ -1996,11 +2040,22 @@ func updateOrCreateRecent(recents []models.ServiceRecent, name string, matchingS
 		if sourceMatch && r.Location == location {
 			recents[i].UtcTime = strconv.FormatInt(utcTime, 10)
 			recents[i].UpdatedOn = FormatTime(time.Now())
-			recentObj = &recents[i]
-			// Move to front
-			recents = append([]models.ServiceRecent{*recentObj}, append(recents[:i], recents[i+1:]...)...)
 
-			return recentObj, recents
+			// Move the matched recent to the front. Copy the value out FIRST,
+			// then rebuild the slice into a fresh backing array. The previous
+			// in-place `append(recents[:i], recents[i+1:]...)` shuffle aliased
+			// the shared backing array and overwrote index i, which both
+			// corrupted the returned pointer (it pointed at the neighbour) and,
+			// because Go does not specify evaluation order between `*recentObj`
+			// and the inner append, could drop the matched recent and duplicate
+			// its neighbour in the saved list.
+			matched := recents[i]
+			reordered := make([]models.ServiceRecent, 0, len(recents))
+			reordered = append(reordered, matched)
+			reordered = append(reordered, recents[:i]...)
+			reordered = append(reordered, recents[i+1:]...)
+
+			return &reordered[0], reordered
 		}
 	}
 
@@ -2116,7 +2171,7 @@ func formatRecentResponse(recentObj *models.ServiceRecent, matchingSrc *models.C
 			Name:             matchingSrc.DisplayName,
 			SourceProviderID: matchingSrc.SourceProviderID,
 			SourceName:       matchingSrc.SourceName,
-			Username:         matchingSrc.Username,
+			Username:         recentSourceUsername(matchingSrc),
 		}
 
 		if res.Source.Name == "TuneIn" || res.Source.Name == "LOCAL_INTERNET_RADIO" {
@@ -2322,11 +2377,27 @@ func RemoveSourceFromAccount(ds *datastore.DataStore, account, sourceID string) 
 	return nil
 }
 
+// newSourceID returns a unique opaque source ID. SaveConfiguredSources dedups
+// by ID, so it must be collision-free even for sources created in the same
+// instant; it uses crypto/rand (64 bits) and falls back to a nanosecond
+// timestamp only if the RNG ever fails.
+func newSourceID() string {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "SRC_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	}
+
+	return "SRC_" + hex.EncodeToString(b[:])
+}
+
 // AddSource adds a new music source to the account and returns the generated source ID.
 func AddSource(ds *datastore.DataStore, account, username, providerID, secret, secretType, sourceName string) (string, error) {
 	now := time.Now()
 	createdOn := FormatTime(now)
-	sourceID := "SRC_" + strconv.FormatInt(now.Unix(), 10)
+	// SaveConfiguredSources dedups by ID, so IDs must be unique even when two
+	// sources are added in the same instant. Use a random ID rather than a
+	// timestamp (which can collide on coarse clocks or rapid calls).
+	sourceID := newSourceID()
 
 	// List accounts directly from the account directory to be sure we find them.
 	devicesDir := ds.AccountDevicesDir(account)
@@ -2368,11 +2439,24 @@ func AddSource(ds *datastore.DataStore, account, username, providerID, secret, s
 
 		PrepareConfiguredSource(&newSrc)
 
-		// Update or append. If it's the same provider, we replace it.
+		// Update or append. Most providers are singletons (one account each), so
+		// the same provider replaces the existing entry. STORED_MUSIC is the
+		// exception: each DLNA media server is a separate account (username =
+		// "<UDN>/0"), so it must only replace when the account also matches.
+		// Otherwise registering a second media server overwrites the first, which
+		// then vanishes from /full + /sources and the speaker drops it (only one
+		// media server could ever stay registered).
 		replaced := false
 
 		for i := range sources {
-			if sources[i].SourceProviderID == providerID ||
+			sameProvider := sources[i].SourceProviderID == providerID
+			if providerID == strconv.Itoa(constants.StoredMusicProviderID) {
+				// Match on the persisted account identity (SourceKey.Account),
+				// not Username, which does not round-trip through the datastore.
+				sameProvider = sameProvider && sources[i].SourceKey.Account == username
+			}
+
+			if sameProvider ||
 				(providerID == strconv.Itoa(constants.SpotifyProviderID) && sources[i].SourceKey.Type == constants.ProviderSpotify) {
 				sources[i] = newSrc
 				replaced = true
