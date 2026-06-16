@@ -99,6 +99,7 @@ func (app *WebApp) MountWeb(r chi.Router, discoveryService *discovery.UnifiedDis
 					r.Post("/tunein/play", app.HandlePlayTuneIn)
 					r.Post("/radiobrowser/play", app.HandlePlayRadioBrowser)
 					r.Post("/url/play", app.HandlePlayURL)
+					r.Post("/deezer/play", app.HandlePlayDeezer)
 					// Proxied to the AfterTouch service's /api/setup/tts/speak.
 					r.Post("/tts/play", app.HandleAPISpeakText)
 				})
@@ -114,19 +115,31 @@ func (app *WebApp) MountWeb(r chi.Router, discoveryService *discovery.UnifiedDis
 				r.Get("/search/next", app.HandleTuneInSearchNext)
 				r.Get("/navigate", app.HandleTuneInNavigate)
 				r.Get("/navigate/*", app.HandleTuneInNavigate)
-			})
-	// DeezerBrowser search
-	r.Route("/deezer",func(r chi.Router) {
-        r.Get("/search", app.HandleDeezerSearch)
-        r.Get("/search/{type}", app.HandleDeezerSearch)
-        r.Get("/artist/{artistId}", app.HandleDeezerArtistDetails)
-        r.Get("/artist/{artistId}/radio", app.HandleDeezerArtistRadio)
-        r.Get("/album/{albumId}/tracks", app.HandleDeezerAlbumTracks)
-        r.Post("/play/{id}", app.HandlePlayDeezer)
-	})
+			}) // <-- Rimosse le virgole errate qui
 
-	// Custom URL playback
-	r.Post("/api/play-url/{id}", app.HandlePlayURL)
+			r.Route("/deezer", func(r chi.Router) {
+				r.Get("/search", app.HandleDeezerSearch)
+				r.Get("/artist/{artistId}", app.HandleDeezerArtistDetails)
+				r.Get("/artist/{artistId}/albums", app.HandleDeezerArtistAlbums)
+				r.Get("/artist/{artistId}/tracklist", app.HandleDeezerArtistTracklist)
+				r.Get("/artist/{artistId}/radio", app.HandleDeezerArtistRadio)
+				r.Get("/album/{albumId}/tracks", app.HandleDeezerAlbumTracks)
+	            r.Get("/artist/{artistId}/top", app.HandleDeezerArtistDetails)
+
+				// Hidden, one-off "continue playing the rest of this
+				// album/tracklist" queue — replaces whatever was playing.
+				r.Post("/devices/{id}/queue", app.HandleDeezerQueue)
+				r.Post("/devices/{id}/queue/stop", app.HandleDeezerQueueStop)
+                r.Post("/devices/{id}/queue/context-play", app.HandleDeezerQueue) // <--- CONTROLLA QUESTA RIGA!
+
+				// Persistent, visible, user-curated queue — survives being
+				// interrupted, supports incremental add / play / remove / clear.
+				r.Get("/devices/{id}/queue/status", app.HandleDeezerQueueStatus)
+				r.Post("/devices/{id}/queue/add", app.HandleDeezerQueueAdd)
+				r.Post("/devices/{id}/queue/play", app.HandleDeezerQueuePlay)
+				r.Post("/devices/{id}/queue/remove", app.HandleDeezerQueueRemove)
+				r.Post("/devices/{id}/queue/clear", app.HandleDeezerQueueClear)
+			}) // <-- Rimosse le virgole errate qui
 
 			r.Route("/radiobrowser", func(r chi.Router) {
 				r.Get("/search", app.HandleRadioBrowserSearch)
@@ -136,7 +149,7 @@ func (app *WebApp) MountWeb(r chi.Router, discoveryService *discovery.UnifiedDis
 				r.Get("/servers", app.HandleDiscoverLibraryServers)
 			})
 		})
-	})
+	}) // <-- Aggiunta la chiusura mancante dell'albero /api/control
 
 	// SPA — served under /app/*. The client navigates via component state
 	// rather than the URL, so these entries only ensure deep links and
@@ -148,6 +161,7 @@ func (app *WebApp) MountWeb(r chi.Router, discoveryService *discovery.UnifiedDis
 	r.Get("/app/device/*", app.serveIndex)
 	r.Get("/app/tunein", app.serveIndex)
 	r.Get("/app/radiobrowser", app.serveIndex)
+	r.Get("/app/deezer", app.serveIndex)
 	r.Get("/app/playurl", app.serveIndex)
 	r.Get("/app/tts", app.serveIndex)
 	r.Get("/app/library", app.serveIndex)
@@ -167,8 +181,8 @@ func (app *WebApp) Mount(r chi.Router, discoveryService *discovery.UnifiedDiscov
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/app", http.StatusFound)
 	})
-	// SPA routes — serve index.html for client-side routing
-	r.Get("/", app.serveIndex)
+
+	// SPA routes — serve index.html for client-side routing.
 	r.Get("/devices", app.serveIndex)
 	r.Get("/device/*", app.serveIndex)
 	r.Get("/tunein", app.serveIndex)

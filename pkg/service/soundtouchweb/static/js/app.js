@@ -14,12 +14,31 @@ import { Library } from './components/Library.js';
 import { DeezerBrowser } from './components/DeezerBrowser.js';
 import { PlayURL } from './components/PlayURL.js';
 import { TTS } from './components/TTS.js';
+import { DeezerQueueView } from './components/DeezerQueueView.js'; // Import del modulo coda
 import { api } from './api.js';
 
 const html = htm.bind(h);
 
 function DeviceDetail({ deviceId, devices, onBack }) {
     const device = devices[deviceId];
+    const [deezerQueueState, setDeezerQueueState] = useState({ local_queue: [], current_track: null });
+
+    // Sincronizza i dati della coda locale ogni 3 secondi se la sorgente attiva è Deezer
+    useEffect(() => {
+        if (device?.status?.nowPlaying?.source === 'DEEZER') {
+            const fetchQueue = async () => {
+                try {
+                    const data = await api.deezerGetQueue(deviceId);
+                    if (data) setDeezerQueueState(data);
+                } catch (e) {
+                    console.error("Errore sincronizzazione coda Deezer:", e);
+                }
+            };
+            fetchQueue();
+            const interval = setInterval(fetchQueue, 3000);
+            return () => clearInterval(interval);
+        }
+    }, [deviceId, device?.status?.nowPlaying?.source]);
 
     if (!device) {
         return html`
@@ -43,6 +62,16 @@ function DeviceDetail({ deviceId, devices, onBack }) {
             </div>
             <${NowPlaying} nowPlaying=${device.status?.nowPlaying} deviceId=${deviceId} presets=${device.status?.presets} />
             <${Controls} deviceId=${deviceId} status=${device.status} />
+
+            <!-- Mostra la coda visibile (Punto 3) solo per la sorgente Deezer -->
+            ${device.status?.nowPlaying?.source === 'DEEZER' ? html`
+                <${DeezerQueueView}
+                    deviceId=${deviceId}
+                    queueState=${deezerQueueState}
+                    onQueueUpdated=${(updated) => setDeezerQueueState(updated)}
+                />
+            ` : null}
+
             <${Presets} deviceId=${deviceId} status=${device.status} />
             <${Sources} deviceId=${deviceId} status=${device.status} />
             <${Zone} deviceId=${deviceId} devices=${devices} />
@@ -103,7 +132,6 @@ function App() {
             if (msg.type === 'devices') {
                 setDevices(msg.data || {});
             } else if (msg.type === 'discovery_status') {
-                console.log('[DEBUG_LOG] discovery_status:', msg.data);
                 if (msg.data?.isDiscovering !== undefined) {
                     setIsDiscovering(msg.data.isDiscovering);
                 } else if (msg.data?.status === 'starting') {
@@ -154,10 +182,9 @@ function App() {
 
     async function removeDevice(id) {
         const name = devices[id]?.info?.name || id;
-        if (!confirm(`Remove "${name}"?\n\nThis clears it from AfterTouch. A device still online may reappear after the next discovery scan.`)) {
+        if (!confirm(`Remove "${name}"?\n\nThis clears it from AfterTouch.`)) {
             return;
         }
-        // Optimistically drop it; the server's devices broadcast reconciles.
         setDevices(prev => {
             const next = { ...prev };
             delete next[id];
@@ -202,7 +229,7 @@ function App() {
                         <img src="/app/static/img/radiobrowser-mono.svg" alt="RadioBrowser" class="nav-rb-icon" />
                     </a>
                     <a href="#" class="${page === 'deezer' ? 'active' : ''}"
-                        onClick=${(e) => { e.preventDefault(); navigate('deezer'); }}
+                        onClick=${(e) => { e.preventDefault(); navigate('deezer', selectedId); }}
                         title="Deezer"
                     >
                         <img src="/app/static/img/Heart-icon.png" alt="Deezer" class="nav-rb-icon" />

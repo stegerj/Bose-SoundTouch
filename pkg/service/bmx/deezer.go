@@ -5,16 +5,20 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"time"
 )
 
-// Dominio ufficiale dell'API di Deezer
-var deezerBaseURL = "https://api.deezer.com"
+// Base URL for the Deezer API.
+const deezerBaseURL = "https://api.deezer.com"
+
+// httpClient is shared across all Deezer API calls with a sensible timeout.
+var httpClient = &http.Client{Timeout: 10 * time.Second}
 
 // ============================================================================
-// STRUTTURE DATI (STRUC) PER LE RISPOSTE API
+// RESPONSE TYPES
 // ============================================================================
 
-// DeezerArtistAlbumsResponse definisce la struttura per la lista degli album
+// DeezerArtistAlbumsResponse holds a paginated list of artist albums.
 type DeezerArtistAlbumsResponse struct {
 	Data []struct {
 		ID         int64  `json:"id"`
@@ -24,54 +28,52 @@ type DeezerArtistAlbumsResponse struct {
 	} `json:"data"`
 }
 
-// DeezerArtistTracksResponse definisce la struttura per le tracce top di un artista
-type DeezerArtistTracksResponse struct {
+// DeezerTrackListResponse is used for artist top tracks, artist radio, and
+// the extended artist tracklist, since all three endpoints return the same
+// shape. Preview holds the (only) audio actually obtainable from Deezer's
+// public, unauthenticated API: a short streamable clip URL. There is no
+// full-track audio available here.
+type DeezerTrackListResponse struct {
 	Data []struct {
-		ID    int64  `json:"id"`
-		Title string `json:"title"`
-		Album struct {
+		ID      int64  `json:"id"`
+		Title   string `json:"title"`
+		Preview string `json:"preview"`
+		Album   struct {
 			CoverSmall string `json:"cover_small"`
 			CoverMed   string `json:"cover_medium"`
 		} `json:"album"`
 	} `json:"data"`
 }
 
-// DeezerAlbumTracksResponse definisce la struttura per le tracce di un singolo album
+// DeezerAlbumTracksResponse holds the tracks for a single album. Preview is
+// the streamable clip URL (see DeezerTrackListResponse for details); without
+// it, queued album tracks have nothing to actually play.
 type DeezerAlbumTracksResponse struct {
 	Data []struct {
 		ID       int64  `json:"id"`
 		Title    string `json:"title"`
-		Duration int    `json:"duration"` // Durata in secondi
+		Duration int    `json:"duration"` // seconds
+		Preview  string `json:"preview"`
 	} `json:"data"`
 }
 
-// DeezerArtistRadioResponse definisce la struttura per i brani estratti dalla radio dell'artista
-type DeezerArtistRadioResponse struct {
-	Data []struct {
-		ID    int64  `json:"id"`
-		Title string `json:"title"`
-		Album struct {
-			CoverSmall string `json:"cover_small"`
-			CoverMed   string `json:"cover_medium"`
-		} `json:"album"`
-	} `json:"data"`
-}
-
-
 // ============================================================================
-// FUNZIONI API DEEZER
+// API FUNCTIONS
 // ============================================================================
 
-// DeezerSearch interroga direttamente Deezer e restituisce l'array di mappe JSON grezze.
+// DeezerSearch queries the Deezer search API and returns raw result maps.
+// searchType must be one of "album", "artist", or "track"; anything else
+// falls back to the generic search endpoint.
 func DeezerSearch(query string, searchType string) ([]map[string]interface{}, error) {
+	validTypes := map[string]bool{"album": true, "artist": true, "track": true}
 	endpoint := "search"
-	if searchType == "album" || searchType == "artist" || searchType == "track" {
+	if validTypes[searchType] {
 		endpoint = "search/" + searchType
 	}
 
 	searchURL := fmt.Sprintf("%s/%s?q=%s", deezerBaseURL, endpoint, url.QueryEscape(query))
 
-	resp, err := http.Get(searchURL)
+	resp, err := httpClient.Get(searchURL)
 	if err != nil {
 		return nil, err
 	}
@@ -81,26 +83,26 @@ func DeezerSearch(query string, searchType string) ([]map[string]interface{}, er
 		return nil, fmt.Errorf("deezer search failed with status %d", resp.StatusCode)
 	}
 
-	var deezerResult struct {
+	var result struct {
 		Data []map[string]interface{} `json:"data"`
 	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&deezerResult); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
 	}
 
-	return deezerResult.Data, nil
+	return result.Data, nil
 }
 
-// DeezerArtistAlbums recupera TUTTI gli album di un artista gestendo la paginazione automatica.
+// DeezerArtistAlbums retrieves all albums for an artist, handling pagination
+// automatically.
 func DeezerArtistAlbums(artistID string) (*DeezerArtistAlbumsResponse, error) {
-	var finalResult DeezerArtistAlbumsResponse
+	var final DeezerArtistAlbumsResponse
 	index := 0
-	limit := 100 // Massimo consentito da Deezer per singola richiesta
+	const limit = 100 // maximum Deezer allows per request
 
 	for {
 		apiURL := fmt.Sprintf("%s/artist/%s/albums?index=%d&limit=%d", deezerBaseURL, artistID, index, limit)
-		resp, err := http.Get(apiURL)
+		resp, err := httpClient.Get(apiURL)
 		if err != nil {
 			return nil, err
 		}
@@ -110,51 +112,48 @@ func DeezerArtistAlbums(artistID string) (*DeezerArtistAlbumsResponse, error) {
 			return nil, fmt.Errorf("deezer artist albums failed with status %d", resp.StatusCode)
 		}
 
-		var pageData DeezerArtistAlbumsResponse
-		err = json.NewDecoder(resp.Body).Decode(&pageData)
-		_ = resp.Body.Close() // Chiude il body immediatamente ad ogni iterazione del ciclo
+		var page DeezerArtistAlbumsResponse
+		err = json.NewDecoder(resp.Body).Decode(&page)
+		_ = resp.Body.Close()
 		if err != nil {
 			return nil, err
 		}
 
-		// Unisce gli elementi della pagina corrente al risultato finale
-		finalResult.Data = append(finalResult.Data, pageData.Data...)
+		final.Data = append(final.Data, page.Data...)
 
-		// Se gli elementi ricevuti sono inferiori al limite richiesto, la paginazione è terminata
-		if len(pageData.Data) < limit {
+		if len(page.Data) < limit {
 			break
 		}
 		index += limit
 	}
 
-	return &finalResult, nil
+	return &final, nil
 }
 
-// DeezerArtistTopTracks recupera le tracce più popolari di un artista direttamente da Deezer.
-func DeezerArtistTopTracks(artistID string) (*DeezerArtistTracksResponse, error) {
-	apiURL := fmt.Sprintf("%s/artist/%s/top", deezerBaseURL, artistID)
-	resp, err := http.Get(apiURL)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("deezer artist top tracks failed with status %d", resp.StatusCode)
-	}
-
-	var data DeezerArtistTracksResponse
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil, err
-	}
-	return &data, nil
+// DeezerArtistTopTracks retrieves the most popular tracks for an artist
+// (Deezer's default page size, roughly two dozen tracks).
+func DeezerArtistTopTracks(artistID string) (*DeezerTrackListResponse, error) {
+	return fetchTrackList(fmt.Sprintf("%s/artist/%s/top", deezerBaseURL, artistID))
 }
 
-// DeezerAlbumTracks recupera la lista di tutte le tracce contenute in un determinato album.
+// DeezerArtistTracklist retrieves an extended track list for an artist (up
+// to 100 tracks). DeezerArtistTopTracks's default page is far too short to
+// back a "queue everything by this artist" feature, so this requests a much
+// higher limit explicitly.
+func DeezerArtistTracklist(artistID string) (*DeezerTrackListResponse, error) {
+	return fetchTrackList(fmt.Sprintf("%s/artist/%s/top?limit=100", deezerBaseURL, artistID))
+}
+
+// DeezerArtistRadio retrieves the artist radio tracks.
+func DeezerArtistRadio(artistID string) (*DeezerTrackListResponse, error) {
+	return fetchTrackList(fmt.Sprintf("%s/artist/%s/radio", deezerBaseURL, artistID))
+}
+
+// DeezerAlbumTracks retrieves all tracks for an album.
+// limit=100 covers virtually all commercial albums without needing pagination.
 func DeezerAlbumTracks(albumID string) (*DeezerAlbumTracksResponse, error) {
-	// Usando limit=100 evitiamo il ciclo di paginazione, coprendo quasi la totalità degli album commerciali
 	apiURL := fmt.Sprintf("%s/album/%s/tracks?limit=100", deezerBaseURL, albumID)
-	resp, err := http.Get(apiURL)
+	resp, err := httpClient.Get(apiURL)
 	if err != nil {
 		return nil, err
 	}
@@ -171,20 +170,19 @@ func DeezerAlbumTracks(albumID string) (*DeezerAlbumTracksResponse, error) {
 	return &data, nil
 }
 
-// DeezerArtistRadio recupera i brani della radio di un artista direttamente da Deezer
-func DeezerArtistRadio(artistID string) (*DeezerArtistRadioResponse, error) {
-	apiURL := fmt.Sprintf("%s/artist/%s/radio", deezerBaseURL, artistID)
-	resp, err := http.Get(apiURL)
+// fetchTrackList is a shared helper for endpoints that return DeezerTrackListResponse.
+func fetchTrackList(apiURL string) (*DeezerTrackListResponse, error) {
+	resp, err := httpClient.Get(apiURL)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("deezer artist radio failed with status %d", resp.StatusCode)
+		return nil, fmt.Errorf("deezer request to %s failed with status %d", apiURL, resp.StatusCode)
 	}
 
-	var data DeezerArtistRadioResponse
+	var data DeezerTrackListResponse
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		return nil, err
 	}
