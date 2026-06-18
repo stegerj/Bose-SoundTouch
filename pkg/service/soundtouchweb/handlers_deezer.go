@@ -1,10 +1,7 @@
 package soundtouchweb
 
 import (
-	"bytes"
 	"encoding/json"
-	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"strconv"
@@ -109,18 +106,16 @@ func (app *WebApp) HandlePlayDeezer(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: map[string]string{"message": "Playing " + req.Name}})
 }
 
-// HandleDeezerQueue accepts a tracklist and immediately starts sequential
-// playback on the device, replacing whatever "hidden" quick-play queue was
-// running before. Used for "continue playing the rest of this album /
-// artist tracklist" actions. It does not touch the persistent visible queue
-// (see HandleDeezerQueueAdd / HandleDeezerQueuePlay below).
-func (app *WebApp) HandleDeezerQueue(w http.ResponseWriter, r *http.Request) {
-	deviceID := chi.URLParam(r, "id")
-	device, exists := app.GetDevice(deviceID)
+// HandleDeezerQueueReplace replaces the current queue with the supplied
+// tracklist and starts playing immediately. This is the ▶ play action —
+// the old queue (if any) is discarded.
+func (app *WebApp) HandleDeezerQueueReplace(w http.ResponseWriter, r *http.Request) {
+	device, exists := app.GetDevice(chi.URLParam(r, "id"))
 	if !exists {
 		app.sendError(w, "Device not found", http.StatusNotFound)
 		return
 	}
+	defer r.Body.Close()
 
 	var req struct {
 		Tracks []bmxpkg.QueueTrack `json:"tracks"`
@@ -129,38 +124,49 @@ func (app *WebApp) HandleDeezerQueue(w http.ResponseWriter, r *http.Request) {
 		app.sendError(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
-
 	if len(req.Tracks) == 0 {
-		app.sendError(w, "Tracks must not be empty", http.StatusBadRequest)
+		app.sendError(w, "tracks must not be empty", http.StatusBadRequest)
 		return
 	}
 
-	bmxpkg.StartQueue(device.DeviceInfo.IPAddress, req.Tracks)
+	bmxpkg.ReplaceQueue(device.DeviceInfo.IPAddress, req.Tracks)
 
+	snap := bmxpkg.GetQueueSnapshot(device.DeviceInfo.IPAddress)
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{
-		Success: true,
-		Data:    map[string]any{"queued": len(req.Tracks), "device_id": deviceID},
-	})
+	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: snap})
 }
 
-// HandleDeezerQueueStop cancels any active queue (hidden or visible) on a
-// device. If the visible queue was the one playing, its track list is kept
-// so it can be replayed from the top via HandleDeezerQueuePlay.
-func (app *WebApp) HandleDeezerQueueStop(w http.ResponseWriter, r *http.Request) {
-	deviceID := chi.URLParam(r, "id")
-	device, exists := app.GetDevice(deviceID)
+// HandleDeezerQueueAdd appends tracks to the end of the current queue. If
+// nothing is playing it starts immediately. This is the + add action.
+func (app *WebApp) HandleDeezerQueueAdd(w http.ResponseWriter, r *http.Request) {
+	device, exists := app.GetDevice(chi.URLParam(r, "id"))
 	if !exists {
 		app.sendError(w, "Device not found", http.StatusNotFound)
 		return
 	}
+	defer r.Body.Close()
 
-	bmxpkg.StopQueue(device.DeviceInfo.IPAddress)
-	w.WriteHeader(http.StatusNoContent)
+	var req struct {
+		Tracks []bmxpkg.QueueTrack `json:"tracks"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		app.sendError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	if len(req.Tracks) == 0 {
+		app.sendError(w, "tracks must not be empty", http.StatusBadRequest)
+		return
+	}
+
+	bmxpkg.AppendQueue(device.DeviceInfo.IPAddress, req.Tracks)
+
+	snap := bmxpkg.GetQueueSnapshot(device.DeviceInfo.IPAddress)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: snap})
 }
 
-// HandleDeezerQueueStatus returns the current state of the device's visible
-// queue (tracks, whether it's playing, current position).
+// HandleDeezerQueueStatus returns the queue snapshot: currently-playing
+// track (nil when idle) plus the upcoming tracks.
 func (app *WebApp) HandleDeezerQueueStatus(w http.ResponseWriter, r *http.Request) {
 	device, exists := app.GetDevice(chi.URLParam(r, "id"))
 	if !exists {
@@ -168,62 +174,13 @@ func (app *WebApp) HandleDeezerQueueStatus(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	snapshot := bmxpkg.GetVisibleQueueSnapshot(device.DeviceInfo.IPAddress)
+	snap := bmxpkg.GetQueueSnapshot(device.DeviceInfo.IPAddress)
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: snapshot})
+	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: snap})
 }
 
-// HandleDeezerQueueAdd appends tracks to the device's persistent, visible
-// queue (the UI's "+" add-to-queue buttons). Unlike HandleDeezerQueue, this
-// only stages tracks — playback starts when HandleDeezerQueuePlay is called,
-// or continues seamlessly if the visible queue is already playing.
-func (app *WebApp) HandleDeezerQueueAdd(w http.ResponseWriter, r *http.Request) {
-	device, exists := app.GetDevice(chi.URLParam(r, "id"))
-	if !exists {
-		app.sendError(w, "Device not found", http.StatusNotFound)
-		return
-	}
-
-	var req struct {
-		Tracks []bmxpkg.QueueTrack `json:"tracks"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		app.sendError(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
-	if len(req.Tracks) == 0 {
-		app.sendError(w, "Tracks must not be empty", http.StatusBadRequest)
-		return
-	}
-
-	bmxpkg.AddToVisibleQueue(device.DeviceInfo.IPAddress, req.Tracks)
-
-	snapshot := bmxpkg.GetVisibleQueueSnapshot(device.DeviceInfo.IPAddress)
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: snapshot})
-}
-
-// HandleDeezerQueuePlay starts (or restarts, from the top) playback of the
-// device's visible queue.
-func (app *WebApp) HandleDeezerQueuePlay(w http.ResponseWriter, r *http.Request) {
-	device, exists := app.GetDevice(chi.URLParam(r, "id"))
-	if !exists {
-		app.sendError(w, "Device not found", http.StatusNotFound)
-		return
-	}
-
-	if err := bmxpkg.PlayVisibleQueue(device.DeviceInfo.IPAddress); err != nil {
-		app.sendError(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	snapshot := bmxpkg.GetVisibleQueueSnapshot(device.DeviceInfo.IPAddress)
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: snapshot})
-}
-
-// HandleDeezerQueueRemove removes a single track (by index) from the
-// device's visible queue buffer.
+// HandleDeezerQueueRemove removes one upcoming track by index (0 = first
+// upcoming, not the currently-playing one).
 func (app *WebApp) HandleDeezerQueueRemove(w http.ResponseWriter, r *http.Request) {
 	device, exists := app.GetDevice(chi.URLParam(r, "id"))
 	if !exists {
@@ -233,32 +190,31 @@ func (app *WebApp) HandleDeezerQueueRemove(w http.ResponseWriter, r *http.Reques
 
 	index, err := strconv.Atoi(r.URL.Query().Get("index"))
 	if err != nil {
-		app.sendError(w, "index parameter must be an integer", http.StatusBadRequest)
+		app.sendError(w, "index query parameter must be an integer", http.StatusBadRequest)
 		return
 	}
-
-	if err := bmxpkg.RemoveFromVisibleQueue(device.DeviceInfo.IPAddress, index); err != nil {
+	if err := bmxpkg.RemoveFromQueue(device.DeviceInfo.IPAddress, index); err != nil {
 		app.sendError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	snapshot := bmxpkg.GetVisibleQueueSnapshot(device.DeviceInfo.IPAddress)
+	snap := bmxpkg.GetQueueSnapshot(device.DeviceInfo.IPAddress)
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: snapshot})
+	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: snap})
 }
 
-// HandleDeezerQueueClear empties the device's visible queue buffer.
-func (app *WebApp) HandleDeezerQueueClear(w http.ResponseWriter, r *http.Request) {
+// HandleDeezerQueueStop stops the queue and clears it entirely.
+func (app *WebApp) HandleDeezerQueueStop(w http.ResponseWriter, r *http.Request) {
 	device, exists := app.GetDevice(chi.URLParam(r, "id"))
 	if !exists {
 		app.sendError(w, "Device not found", http.StatusNotFound)
 		return
 	}
 
-	bmxpkg.ClearVisibleQueue(device.DeviceInfo.IPAddress)
-
+	bmxpkg.StopQueue(device.DeviceInfo.IPAddress)
+	snap := bmxpkg.GetQueueSnapshot(device.DeviceInfo.IPAddress)
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: bmxpkg.VisibleQueueSnapshot{}})
+	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: snap})
 }
 
 // HandleDeezerArtistDetails returns the full album list and top tracks for an artist.
@@ -297,7 +253,6 @@ func (app *WebApp) HandleDeezerArtistDetails(w http.ResponseWriter, r *http.Requ
 		formattedTracks = append(formattedTracks, map[string]interface{}{
 			"id":      track.ID,
 			"title":   track.Title,
-			"preview": track.Preview,
 			"album": map[string]string{
 				"cover_small":  track.Album.CoverSmall,
 				"cover_medium": track.Album.CoverMed,
@@ -372,7 +327,6 @@ func (app *WebApp) HandleDeezerArtistTracklist(w http.ResponseWriter, r *http.Re
 		formattedTracks = append(formattedTracks, map[string]interface{}{
 			"id":      track.ID,
 			"title":   track.Title,
-			"preview": track.Preview,
 			"album": map[string]string{
 				"cover_small":  track.Album.CoverSmall,
 				"cover_medium": track.Album.CoverMed,
@@ -409,7 +363,6 @@ func (app *WebApp) HandleDeezerArtistRadio(w http.ResponseWriter, r *http.Reques
 		formattedTracks = append(formattedTracks, map[string]interface{}{
 			"id":      track.ID,
 			"title":   track.Title,
-			"preview": track.Preview,
 			"album": map[string]string{
 				"cover_small":  track.Album.CoverSmall,
 				"cover_medium": track.Album.CoverMed,
@@ -442,7 +395,6 @@ func (app *WebApp) HandleDeezerAlbumTracks(w http.ResponseWriter, r *http.Reques
 			"id":       track.ID,
 			"title":    track.Title,
 			"duration": track.Duration,
-			"preview":  track.Preview,
 			"type":     "track",
 		})
 	}
@@ -451,32 +403,12 @@ func (app *WebApp) HandleDeezerAlbumTracks(w http.ResponseWriter, r *http.Reques
 	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: formattedTracks})
 }
 
-// extractDeezerAccount esegue lo split di stringa originale che leggeva correttamente l'XML
+// extractDeezerAccount reads the device's currently configured Deezer
+// source account. The actual XML probing lives in bmxpkg.DeezerSourceAccount
+// so the queue (deezer_queue.go) and this classic single-item play path
+// share one implementation instead of two copies drifting apart.
 func (app *WebApp) extractDeezerAccount(deviceIP string) string {
-	sourcesURL := fmt.Sprintf("http://%s:8090/sources", deviceIP)
-	resp, err := http.Get(sourcesURL)
-	if err != nil {
-		return ""
-	}
-	defer resp.Body.Close()
-
-	buf := new(bytes.Buffer)
-	_, _ = io.Copy(buf, resp.Body)
-	xmlStr := buf.String()
-
-	if strings.Contains(xmlStr, `source="DEEZER"`) {
-		parts := strings.Split(xmlStr, `source="DEEZER"`)
-		if len(parts) > 1 {
-			subParts := strings.Split(parts[1], `sourceAccount="`)
-			if len(subParts) > 1 {
-				emailParts := strings.Split(subParts[1], `"`)
-				if len(emailParts) > 0 {
-					return emailParts[0]
-				}
-			}
-		}
-	}
-	return ""
+	return bmxpkg.DeezerSourceAccount(deviceIP)
 }
 
 func deezerUnquote(raw json.RawMessage) string {

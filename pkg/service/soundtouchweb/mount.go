@@ -125,19 +125,15 @@ func (app *WebApp) MountWeb(r chi.Router, discoveryService *discovery.UnifiedDis
 				r.Get("/artist/{artistId}/radio", app.HandleDeezerArtistRadio)
 				r.Get("/album/{albumId}/tracks", app.HandleDeezerAlbumTracks)
 
-				// Hidden, one-off "continue playing the rest of this
-				// album/tracklist" queue — replaces whatever was playing.
-				r.Post("/devices/{id}/queue", app.HandleDeezerQueue)
-				r.Post("/devices/{id}/queue/stop", app.HandleDeezerQueueStop)
-
-				// Persistent, visible, user-curated queue — survives being
-				// interrupted, supports incremental add / play / remove / clear.
-				r.Get("/devices/{id}/queue/status", app.HandleDeezerQueueStatus)
+				// Single queue per device. POST /queue = replace+play (▶).
+				// POST /queue/add = append (also starts if idle). GET /queue/status,
+				// DELETE /queue/track?index=N, POST /queue/stop.
+				r.Post("/devices/{id}/queue", app.HandleDeezerQueueReplace)
 				r.Post("/devices/{id}/queue/add", app.HandleDeezerQueueAdd)
-				r.Post("/devices/{id}/queue/play", app.HandleDeezerQueuePlay)
+				r.Get("/devices/{id}/queue/status", app.HandleDeezerQueueStatus)
 				r.Post("/devices/{id}/queue/remove", app.HandleDeezerQueueRemove)
-				r.Post("/devices/{id}/queue/clear", app.HandleDeezerQueueClear)
-			}) // <-- Rimosse le virgole errate qui
+				r.Post("/devices/{id}/queue/stop", app.HandleDeezerQueueStop)
+			})
 
 			r.Route("/radiobrowser", func(r chi.Router) {
 				r.Get("/search", app.HandleRadioBrowserSearch)

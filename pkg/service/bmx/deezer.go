@@ -1,10 +1,13 @@
 package bmx
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -30,30 +33,24 @@ type DeezerArtistAlbumsResponse struct {
 
 // DeezerTrackListResponse is used for artist top tracks, artist radio, and
 // the extended artist tracklist, since all three endpoints return the same
-// shape. Preview holds the (only) audio actually obtainable from Deezer's
-// public, unauthenticated API: a short streamable clip URL. There is no
-// full-track audio available here.
+// shape.
 type DeezerTrackListResponse struct {
 	Data []struct {
-		ID      int64  `json:"id"`
-		Title   string `json:"title"`
-		Preview string `json:"preview"`
-		Album   struct {
+		ID    int64  `json:"id"`
+		Title string `json:"title"`
+		Album struct {
 			CoverSmall string `json:"cover_small"`
 			CoverMed   string `json:"cover_medium"`
 		} `json:"album"`
 	} `json:"data"`
 }
 
-// DeezerAlbumTracksResponse holds the tracks for a single album. Preview is
-// the streamable clip URL (see DeezerTrackListResponse for details); without
-// it, queued album tracks have nothing to actually play.
+// DeezerAlbumTracksResponse holds the tracks for a single album.
 type DeezerAlbumTracksResponse struct {
 	Data []struct {
 		ID       int64  `json:"id"`
 		Title    string `json:"title"`
 		Duration int    `json:"duration"` // seconds
-		Preview  string `json:"preview"`
 	} `json:"data"`
 }
 
@@ -187,4 +184,37 @@ func fetchTrackList(apiURL string) (*DeezerTrackListResponse, error) {
 		return nil, err
 	}
 	return &data, nil
+}
+
+// DeezerSourceAccount returns the device's currently configured Deezer
+// source account (the account that was logged into Deezer directly on the
+// speaker), read from its local /sources endpoint. Playback is by Deezer
+// catalog ID — both the classic single-item play and the queue mechanism
+// resolve and stream audio device-side via this account, the same way.
+// Returns "" if no account is found; callers apply their own fallback.
+func DeezerSourceAccount(deviceIP string) string {
+	sourcesURL := fmt.Sprintf("http://%s:8090/sources", deviceIP)
+	resp, err := httpClient.Get(sourcesURL)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	buf := new(bytes.Buffer)
+	_, _ = io.Copy(buf, resp.Body)
+	xmlStr := buf.String()
+
+	if strings.Contains(xmlStr, `source="DEEZER"`) {
+		parts := strings.Split(xmlStr, `source="DEEZER"`)
+		if len(parts) > 1 {
+			subParts := strings.Split(parts[1], `sourceAccount="`)
+			if len(subParts) > 1 {
+				emailParts := strings.Split(subParts[1], `"`)
+				if len(emailParts) > 0 {
+					return emailParts[0]
+				}
+			}
+		}
+	}
+	return ""
 }
