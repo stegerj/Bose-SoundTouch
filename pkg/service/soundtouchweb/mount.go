@@ -124,13 +124,11 @@ func (app *WebApp) MountWeb(r chi.Router, discoveryService *discovery.UnifiedDis
 				r.Get("/artist/{artistId}/tracklist", app.HandleDeezerArtistTracklist)
 				r.Get("/artist/{artistId}/radio", app.HandleDeezerArtistRadio)
 				r.Get("/album/{albumId}/tracks", app.HandleDeezerAlbumTracks)
-	            r.Get("/artist/{artistId}/top", app.HandleDeezerArtistDetails)
 
 				// Hidden, one-off "continue playing the rest of this
 				// album/tracklist" queue — replaces whatever was playing.
 				r.Post("/devices/{id}/queue", app.HandleDeezerQueue)
 				r.Post("/devices/{id}/queue/stop", app.HandleDeezerQueueStop)
-                r.Post("/devices/{id}/queue/context-play", app.HandleDeezerQueue) // <--- CONTROLLA QUESTA RIGA!
 
 				// Persistent, visible, user-curated queue — survives being
 				// interrupted, supports incremental add / play / remove / clear.

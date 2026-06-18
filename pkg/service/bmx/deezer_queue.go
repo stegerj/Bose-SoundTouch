@@ -1,12 +1,13 @@
 package bmx
 
 import (
+	"encoding/xml" // Assicurato
 	"fmt"
 	"log"
+	"net/http" // Assicurato
+	"strconv"
 	"sync"
 	"time"
-	"encoding/xml" // <-- ASSICURATI CHE SIA PRESENTE
-    "net/http"     // <-- ASSICURATI CHE SIA PRESENTE
 
 	"github.com/gesellix/bose-soundtouch/pkg/client"
 	"github.com/gesellix/bose-soundtouch/pkg/models"
@@ -21,8 +22,8 @@ type QueueTrack struct {
 	ID        int64  `json:"id"`
 	Title     string `json:"title"`
 	Artist    string `json:"artist"`
-	StreamURL string `json:"stream_url"` // Obbligatorio in snake_case per allinearsi a api.js
-	CoverURL  string `json:"cover_url"`  // Obbligatorio in snake_case per allinearsi a api.js
+	StreamURL string `json:"stream_url"`
+	CoverURL  string `json:"cover_url"`
 }
 
 type Queue struct {
@@ -95,8 +96,9 @@ func (q *Queue) run() {
 		track := q.tracks[q.pos]
 		q.mu.Unlock()
 
-		if track.StreamURL == "" {
-			log.Printf("[deezer-queue] Skipping track %d/%d (%s): no preview URL available", q.pos+1, len(q.tracks), track.Title)
+		// Controllo basato sull'ID nativo anziché sulla presenza della preview URL
+		if track.ID == 0 && track.StreamURL == "" {
+			log.Printf("[deezer-queue] Skipping track %d/%d (%s): no ID or preview URL available", q.pos+1, len(q.tracks), track.Title)
 			q.mu.Lock()
 			q.pos++
 			q.mu.Unlock()
@@ -121,8 +123,6 @@ func (q *Queue) run() {
 
 func (q *Queue) playTrack(track QueueTrack) error {
 	// 1. Recuperiamo dinamicamente l'account Deezer reale registrato su questo diffusore.
-	// Nota: Poiché siamo all'interno del pacchetto bmx e non abbiamo l'istanza 'app' del server web,
-	// interroghiamo direttamente l'endpoint locale della cassa sulla porta 8090 per estrarre l'account.
 	sourceAccount := ""
 	sourcesURL := fmt.Sprintf("http://%s:8090/sources", q.deviceIP)
 
@@ -135,7 +135,6 @@ func (q *Queue) playTrack(track QueueTrack) error {
 			} `xml:"sourceItem"`
 		}
 
-		// Usiamo il decodificatore XML nativo di Go per interpretare i dati della cassa
 		if err := xml.NewDecoder(resp.Body).Decode(&result); err == nil {
 			for _, item := range result.SourceItems {
 				if item.Source == "DEEZER" && item.Status == "READY" {
@@ -160,13 +159,20 @@ func (q *Queue) playTrack(track QueueTrack) error {
 		sourceAccount = "12345678"
 	}
 
-	log.Printf("[deezer-queue] Inoltro traccia nativa a Bose -> ID: %s, Account: %s", track.StreamURL, sourceAccount)
+	// === SOLUZIONE ORDINATA: Ricaviamo l'ID nativo in formato stringa ===
+	locationID := track.StreamURL
+	if track.ID != 0 {
+		locationID = strconv.FormatInt(track.ID, 10)
+	}
+	// ====================================================================
 
-	// 2. Modifichiamo i parametri convertendoli nei valori nativi richiesti dal firmware Bose per Deezer
+	log.Printf("[deezer-queue] Inoltro traccia nativa a Bose -> ID: %s, Account: %s", locationID, sourceAccount)
+
+	// 2. Inviamo i parametri convertendoli nei valori nativi richiesti dal firmware Bose per Deezer
 	return q.spkClient.SelectContentItem(&models.ContentItem{
 		Source:        "DEEZER",                    // Sorgente nativa ufficiale
 		Type:          "track",                     // Indica che è un brano singolo
-		Location:      track.StreamURL,             // Stringa numerica pulita dell'ID della traccia (es. "275050252")
+		Location:      locationID,                  // Stringa numerica pulita dell'ID della traccia (es. "275050252")
 		ItemName:      track.Title + " — " + track.Artist,
 		SourceAccount: sourceAccount,               // Identificativo dell'abbonamento Premium sulla cassa
 		IsPresetable:  true,
@@ -181,17 +187,40 @@ func (q *Queue) waitForTrackEnd() bool {
 	wsClient.OnNowPlaying(func(event *models.NowPlayingUpdatedEvent) {
 		np := event.NowPlaying
 
-		// Cooldown per evitare lo STOP_STATE istantaneo del cambio traccia
-		if time.Since(startTime) < 3*time.Second {
+		// Cooldown iniziale di 4 secondi per evitare cambi traccia istantanei dovuti allo switch
+		if time.Since(startTime) < 4*time.Second {
 			return
 		}
 
-		if np.PlayStatus == models.PlayStatusStopped || np.PlayStatus == models.PlayStatusStandby {
-			select {
-			case <-done:
-			default:
-				close(done)
-			}
+		// Rileviamo se la cassa ha fermato la traccia precedente, è andata in standby
+		// o ha momentaneamente perso la sorgente (INVALID_SOURCE) a fine traccia
+		isStopped := np.PlayStatus == models.PlayStatusStopped ||
+			np.PlayStatus == models.PlayStatusStandby ||
+			np.Source == "INVALID_SOURCE"
+
+		// Rileviamo anche se la cassa è ancora in riproduzione ma ha già resettato/svuotato
+		// la Location della traccia corrente (segno che ha terminato il file di Deezer)
+		q.mu.Lock()
+		currentTrack := q.tracks[q.pos]
+		q.mu.Unlock()
+		idStr := strconv.FormatInt(currentTrack.ID, 10)
+
+		isTrackFinished := np.Source == "DEEZER" && np.ContentItem.Location != idStr
+
+		if isStopped || isTrackFinished {
+			log.Printf("[deezer-queue] Cambio traccia intercettato (Stato: %s, Sorgente: %s). Preparazione transizione...", np.PlayStatus, np.Source)
+
+			// PICCOLO TRUCCO DI SINCRONIZZAZIONE (Anti INVALID_SOURCE)
+			// Aspettiamo un istante per far scaricare l'ultimo micro-buffer audio della cassa,
+			// dopodiché chiudiamo il canale per forzare l'invio immediato del prossimo brano.
+			go func() {
+				time.Sleep(200 * time.Millisecond)
+				select {
+				case <-done:
+				default:
+					close(done)
+				}
+			}()
 		}
 	})
 
@@ -214,16 +243,9 @@ func (q *Queue) waitForTrackEnd() bool {
 	}
 }
 
+
 // ============================================================================
 // VISIBLE QUEUE — user-curated, persists across stop/play, shown in the UI.
-//
-// Unlike the hidden queue above (StartQueue/StopQueue, used for "continue
-// playing the rest of this album/tracklist" actions, which is replaced
-// wholesale every time it's triggered), the visible queue is built up
-// incrementally via AddToVisibleQueue and only starts driving playback when
-// PlayVisibleQueue is called. Its track list survives being interrupted by a
-// hidden quick-play elsewhere, so pressing Play again resumes the same
-// queue from the top.
 // ============================================================================
 
 var (
@@ -232,18 +254,12 @@ var (
 	visibleQueueMu     sync.Mutex
 )
 
-// VisibleQueueSnapshot describes the current state of a device's visible
-// queue, returned to the UI for display.
 type VisibleQueueSnapshot struct {
 	Tracks  []QueueTrack `json:"tracks"`
 	Playing bool         `json:"playing"`
 	Pos     int          `json:"pos"`
 }
 
-// AddToVisibleQueue appends tracks to the device's visible queue buffer. If
-// the visible queue is the one currently driving playback, the tracks are
-// also appended to the live, running queue so they play seamlessly once
-// reached — no restart needed.
 func AddToVisibleQueue(deviceIP string, tracks []QueueTrack) {
 	visibleQueueMu.Lock()
 	visibleQueueTracks[deviceIP] = append(visibleQueueTracks[deviceIP], tracks...)
@@ -265,8 +281,6 @@ func AddToVisibleQueue(deviceIP string, tracks []QueueTrack) {
 	}
 }
 
-// PlayVisibleQueue starts (or restarts, from the top) playback of the
-// device's visible queue buffer.
 func PlayVisibleQueue(deviceIP string) error {
 	visibleQueueMu.Lock()
 	tracks := append([]QueueTrack{}, visibleQueueTracks[deviceIP]...)
@@ -281,58 +295,85 @@ func PlayVisibleQueue(deviceIP string) error {
 	visibleQueueMu.Lock()
 	visibleQueueOwner[deviceIP] = q
 	visibleQueueMu.Unlock()
-
 	return nil
 }
 
-// RemoveFromVisibleQueue removes the track at index from the staged buffer.
-// It only affects the buffer, not an already-running playback session — the
-// UI is expected to disable removal while the queue is playing.
+func GetVisibleQueueSnapshot(deviceIP string) VisibleQueueSnapshot {
+	visibleQueueMu.Lock()
+	defer visibleQueueMu.Unlock()
+
+	tracks := visibleQueueTracks[deviceIP]
+	if tracks == nil {
+		tracks = []QueueTrack{}
+	}
+
+	owner := visibleQueueOwner[deviceIP]
+	if owner == nil {
+		return VisibleQueueSnapshot{Tracks: tracks, Playing: false, Pos: 0}
+	}
+
+	activeQueuesMu.Lock()
+	stillActive := activeQueues[deviceIP] == owner
+	activeQueuesMu.Unlock()
+
+	if !stillActive {
+		return VisibleQueueSnapshot{Tracks: tracks, Playing: false, Pos: 0}
+	}
+
+	owner.mu.Lock()
+	pos := owner.pos
+	owner.mu.Unlock()
+
+	return VisibleQueueSnapshot{Tracks: tracks, Playing: true, Pos: pos}
+}
+
 func RemoveFromVisibleQueue(deviceIP string, index int) error {
 	visibleQueueMu.Lock()
 	defer visibleQueueMu.Unlock()
 
 	tracks := visibleQueueTracks[deviceIP]
 	if index < 0 || index >= len(tracks) {
-		return fmt.Errorf("index out of range")
+		return fmt.Errorf("index out of bounds")
 	}
-	updated := make([]QueueTrack, 0, len(tracks)-1)
-	updated = append(updated, tracks[:index]...)
-	updated = append(updated, tracks[index+1:]...)
-	visibleQueueTracks[deviceIP] = updated
-	return nil
-}
 
-// ClearVisibleQueue empties the device's visible queue buffer.
-func ClearVisibleQueue(deviceIP string) {
-	visibleQueueMu.Lock()
-	delete(visibleQueueTracks, deviceIP)
-	visibleQueueMu.Unlock()
-}
+	visibleQueueTracks[deviceIP] = append(tracks[:index], tracks[index+1:]...)
 
-// GetVisibleQueueSnapshot returns the current visible queue buffer plus
-// whether it's the thing actively driving playback right now.
-func GetVisibleQueueSnapshot(deviceIP string) VisibleQueueSnapshot {
-	visibleQueueMu.Lock()
-	tracks := append([]QueueTrack{}, visibleQueueTracks[deviceIP]...)
 	owner := visibleQueueOwner[deviceIP]
-	visibleQueueMu.Unlock()
-
-	snapshot := VisibleQueueSnapshot{Tracks: tracks}
 	if owner == nil {
-		return snapshot
+		return nil
 	}
 
 	activeQueuesMu.Lock()
 	stillActive := activeQueues[deviceIP] == owner
 	activeQueuesMu.Unlock()
-	if !stillActive {
-		return snapshot
+
+	if stillActive {
+		owner.mu.Lock()
+		if index < owner.pos {
+			owner.pos--
+		}
+		owner.tracks = append(owner.tracks[:index], owner.tracks[index+1:]...)
+		owner.mu.Unlock()
 	}
 
-	owner.mu.Lock()
-	snapshot.Playing = true
-	snapshot.Pos = owner.pos
-	owner.mu.Unlock()
-	return snapshot
+	return nil
+}
+
+func ClearVisibleQueue(deviceIP string) {
+	visibleQueueMu.Lock()
+	visibleQueueTracks[deviceIP] = []QueueTrack{}
+	owner := visibleQueueOwner[deviceIP]
+	visibleQueueMu.Unlock()
+
+	if owner == nil {
+		return
+	}
+
+	activeQueuesMu.Lock()
+	stillActive := activeQueues[deviceIP] == owner
+	activeQueuesMu.Unlock()
+
+	if stillActive {
+		close(owner.stop)
+	}
 }

@@ -21,6 +21,7 @@ async function req(url, opts = {}) {
 }
 
 export const api = {
+    // Gestione dispositivi
     devices: () => req('/api/control/devices'),
     device: (id) => req(`/api/control/devices/${id}`),
     removeDevice: (id) => req(`/api/control/devices/${id}`, { method: 'DELETE' }),
@@ -87,7 +88,7 @@ export const api = {
     },
     libraryPlay: (id, body) => req(`/api/control/devices/${id}/library/play`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(body) }),
 
-    // Deezer — browse (global, not device-scoped)
+    // Deezer
     deezerSearch: (q, type) => req(`/api/control/providers/deezer/search?q=${encodeURIComponent(q)}${type ? `&type=${encodeURIComponent(type)}` : ''}`),
     deezerArtistDetails: (artistId) => req(`/api/control/providers/deezer/artist/${artistId}`),
     deezerArtistRadio: (artistId) => req(`/api/control/providers/deezer/artist/${artistId}/radio`),
@@ -96,34 +97,35 @@ export const api = {
     deezerArtistTracklist: (artistId) => req(`/api/control/providers/deezer/artist/${artistId}/tracklist`),
     deezerArtistTopTracks: (artistId) => req(`/api/control/providers/deezer/artist/${artistId}/top`),
 
-    // Deezer — playback nativo vecchio stile (device-scoped)
+    // Deezer playback (device-scoped)
     deezerPlay: (deviceId, item) => req(`/api/control/devices/${deviceId}/providers/deezer/play`, {
         method: 'POST',
         headers: JSON_HEADERS,
         body: JSON.stringify(item),
     }),
 
-    // --- 2° PUNTO: Coda Dinamica Contestuale (Reindirizzato su /providers/deezer/devices/{id}/queue) ---
-    deezerPlayFromContext: (deviceId, trackId, tracks, contextType, contextId) => req(`/api/control/providers/deezer/devices/${deviceId}/queue`, {
+    // Deezer queue (global, not device-scoped)
+    deezerQueue: (deviceId, tracks) => req(`/api/control/providers/deezer/devices/${deviceId}/queue`, {
         method: 'POST',
         headers: JSON_HEADERS,
         body: JSON.stringify({ tracks }),
     }),
-
-    // --- 3° PUNTO: Coda Locale Visibile / Add to Queue (Reindirizzati sui corretti endpoint del tuo mount.go) ---
-    deezerGetQueue: (deviceId) => req(`/api/control/providers/deezer/devices/${deviceId}/queue/status`),
-
+    deezerQueueStop: (deviceId) => req(`/api/control/providers/deezer/devices/${deviceId}/queue/stop`, {
+        method: 'POST',
+    }),
+    deezerQueueStatus: (deviceId) => req(`/api/control/providers/deezer/devices/${deviceId}/queue/status`),
     deezerAddToQueue: (deviceId, tracks) => req(`/api/control/providers/deezer/devices/${deviceId}/queue/add`, {
         method: 'POST',
         headers: JSON_HEADERS,
-        body: JSON.stringify({ tracks: Array.isArray(tracks) ? tracks : [tracks] }),
+        body: JSON.stringify({ tracks }),
     }),
-
-    deezerRemoveFromQueue: (deviceId, index) => req(`/api/control/providers/deezer/devices/${deviceId}/queue/remove?index=${index}`, {
+    deezerQueuePlay: (deviceId) => req(`/api/control/providers/deezer/devices/${deviceId}/queue/play`, {
         method: 'POST',
     }),
-
-    deezerQueueStop: (deviceId) => req(`/api/control/providers/deezer/devices/${deviceId}/queue/stop`, {
+    deezerQueueRemove: (deviceId, index) => req(`/api/control/providers/deezer/devices/${deviceId}/queue/remove?index=${index}`, {
+        method: 'POST',
+    }),
+    deezerQueueClear: (deviceId) => req(`/api/control/providers/deezer/devices/${deviceId}/queue/clear`, {
         method: 'POST',
     }),
 };
