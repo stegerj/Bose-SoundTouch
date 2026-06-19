@@ -19,6 +19,10 @@ import (
 // instance used for startup discovery so settings (interface, timeout) stay
 // consistent.
 func (app *WebApp) MountWeb(r chi.Router, discoveryService *discovery.UnifiedDiscoveryService) {
+	// Wire the Deezer queue broadcaster so track-advance events are pushed
+	// over the WebSocket instead of requiring clients to poll.
+	app.SetupDeezerQueueBroadcaster()
+
 	// Embedded assets, served under the /app subtree so nothing contends with a
 	// host router's own /static (e.g. the Stockholm bridge's root catch-all).
 	subFS, _ := fs.Sub(StaticFS, "static")

@@ -14,31 +14,12 @@ import { Library } from './components/Library.js';
 import { DeezerBrowser } from './components/DeezerBrowser.js';
 import { PlayURL } from './components/PlayURL.js';
 import { TTS } from './components/TTS.js';
-import { DeezerQueueView } from './components/DeezerQueueView.js'; // Import del modulo coda
 import { api } from './api.js';
 
 const html = htm.bind(h);
 
 function DeviceDetail({ deviceId, devices, onBack }) {
     const device = devices[deviceId];
-    const [deezerQueueState, setDeezerQueueState] = useState({ local_queue: [], current_track: null });
-
-    // Sincronizza i dati della coda locale ogni 3 secondi se la sorgente attiva è Deezer
-    useEffect(() => {
-        if (device?.status?.nowPlaying?.source === 'DEEZER') {
-            const fetchQueue = async () => {
-                try {
-                    const data = await api.deezerGetQueue(deviceId);
-                    if (data) setDeezerQueueState(data);
-                } catch (e) {
-                    console.error("Errore sincronizzazione coda Deezer:", e);
-                }
-            };
-            fetchQueue();
-            const interval = setInterval(fetchQueue, 3000);
-            return () => clearInterval(interval);
-        }
-    }, [deviceId, device?.status?.nowPlaying?.source]);
 
     if (!device) {
         return html`
@@ -62,16 +43,6 @@ function DeviceDetail({ deviceId, devices, onBack }) {
             </div>
             <${NowPlaying} nowPlaying=${device.status?.nowPlaying} deviceId=${deviceId} presets=${device.status?.presets} />
             <${Controls} deviceId=${deviceId} status=${device.status} />
-
-            <!-- Mostra la coda visibile (Punto 3) solo per la sorgente Deezer -->
-            ${device.status?.nowPlaying?.source === 'DEEZER' ? html`
-                <${DeezerQueueView}
-                    deviceId=${deviceId}
-                    queueState=${deezerQueueState}
-                    onQueueUpdated=${(updated) => setDeezerQueueState(updated)}
-                />
-            ` : null}
-
             <${Presets} deviceId=${deviceId} status=${device.status} />
             <${Sources} deviceId=${deviceId} status=${device.status} />
             <${Zone} deviceId=${deviceId} devices=${devices} />
@@ -151,6 +122,10 @@ function App() {
                         [msg.deviceId]: { ...prev[msg.deviceId], status: msg.data },
                     };
                 });
+            } else if (msg.type === 'deezer_queue') {
+                // Forward to whichever DeezerBrowser instance is mounted, without
+                // opening a second WebSocket connection or passing state through props.
+                window.dispatchEvent(new CustomEvent('deezer_queue', { detail: msg }));
             }
         };
 
@@ -182,7 +157,7 @@ function App() {
 
     async function removeDevice(id) {
         const name = devices[id]?.info?.name || id;
-        if (!confirm(`Remove "${name}"?\n\nThis clears it from AfterTouch.`)) {
+        if (!confirm(`Remove "${name}"?\n\nThis clears it from AfterTouch. A device still online may reappear after the next discovery scan.`)) {
             return;
         }
         setDevices(prev => {
@@ -229,10 +204,12 @@ function App() {
                         <img src="/app/static/img/radiobrowser-mono.svg" alt="RadioBrowser" class="nav-rb-icon" />
                     </a>
                     <a href="#" class="${page === 'deezer' ? 'active' : ''}"
-                        onClick=${(e) => { e.preventDefault(); navigate('deezer', selectedId); }}
+                        onClick=${(e) => { e.preventDefault(); navigate('deezer'); }}
                         title="Deezer"
                     >
-                        <img src="/app/static/img/Heart-icon.png" alt="Deezer" class="nav-rb-icon" />
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                            <path d="M18.81 11.157H24v2.228h-5.19zM18.81 7.826H24v2.228h-5.19zM18.81 14.49H24v2.228h-5.19zM12.404 14.49h5.19v2.228h-5.19zM6 14.49h5.19v2.228H6zM0 14.49h5.19v2.228H0zM12.404 11.157h5.19v2.228h-5.19z"/>
+                        </svg>
                     </a>
                     <a href="#" class="${page === 'playurl' ? 'active' : ''}"
                         onClick=${(e) => { e.preventDefault(); navigate('playurl'); }}
@@ -300,17 +277,17 @@ function App() {
                 ` : null}
             </main>
 
-                ${version ? html`
-                    <footer id="footer" key="footer">
-                        <span>
-                            AfterTouch <a href="${version.release_url || version.repo_url}" target="_blank">${version.version}</a>
-                            ${version.commit && version.commit !== 'unknown' ? html`
-                                ${' ('}<a href="${version.commit_url}" target="_blank">${version.commit.substring(0, 7)}</a>${')'}
-                            ` : null}
-                            ${version.date && version.date !== 'unknown' ? html` • ${version.date}` : null}
-                        </span>
-                    </footer>
-                ` : null}
+            ${version ? html`
+                <footer id="footer" key="footer">
+                    <span>
+                        AfterTouch <a href="${version.release_url || version.repo_url}" target="_blank">${version.version}</a>
+                        ${version.commit && version.commit !== 'unknown' ? html`
+                            ${' ('}<a href="${version.commit_url}" target="_blank">${version.commit.substring(0, 7)}</a>${')'}
+                        ` : null}
+                        ${version.date && version.date !== 'unknown' ? html` • ${version.date}` : null}
+                    </span>
+                </footer>
+            ` : null}
 
             ${toast ? html`<div class="toast" key="toast">${toast}</div>` : null}
         </div>

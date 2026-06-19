@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/gorilla/websocket" // same package used by BroadcastDeviceList — adjust path if different
 	"github.com/gesellix/bose-soundtouch/pkg/models"
 	bmxpkg "github.com/gesellix/bose-soundtouch/pkg/service/bmx"
 	"github.com/gesellix/bose-soundtouch/pkg/service/soundtouchweb/webtypes"
@@ -409,6 +410,35 @@ func (app *WebApp) HandleDeezerAlbumTracks(w http.ResponseWriter, r *http.Reques
 // share one implementation instead of two copies drifting apart.
 func (app *WebApp) extractDeezerAccount(deviceIP string) string {
 	return bmxpkg.DeezerSourceAccount(deviceIP)
+}
+
+// SetupDeezerQueueBroadcaster registers the WebApp's WebSocket broadcast
+// function with the bmx queue package. Call this once at startup (from
+// MountWeb) so every queue state change is pushed to all connected clients
+// as a "deezer_queue" message, eliminating UI polling entirely.
+func (app *WebApp) SetupDeezerQueueBroadcaster() {
+	bmxpkg.RegisterQueueBroadcaster(func(deviceIP string, snap bmxpkg.QueueSnapshot) {
+		message := webtypes.WebSocketMessage{
+			Type:     "deezer_queue",
+			DeviceID: deviceIP,
+			Data:     snap,
+		}
+
+		app.WSMutex.RLock()
+		defer app.WSMutex.RUnlock()
+
+		var failed []*websocket.Conn
+		for client := range app.WSClients {
+			if err := client.WriteJSON(message); err != nil {
+				log.Printf("[deezer-queue] WebSocket send error: %v", err)
+				failed = append(failed, client)
+			}
+		}
+		for _, c := range failed {
+			delete(app.WSClients, c)
+			c.Close()
+		}
+	})
 }
 
 func deezerUnquote(raw json.RawMessage) string {

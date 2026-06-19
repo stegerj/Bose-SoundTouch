@@ -52,25 +52,36 @@ export function DeezerBrowser({ devices, deviceId }) {
   const [pendingAction, setPendingAction] = useState(null);
 
   // ── queue polling ──
-  const refreshQueue = useCallback(async (devId) => {
-    const id = devId || resolvedDeviceId;
-    if (!id) return;
-    try {
-      const res = await api.deezerQueueStatus(id);
-      const d = res?.data || res || {};
-      setQueue({
-        current:  d.current  || null,
-        upcoming: d.upcoming || [],
-        playing:  !!d.playing,
-      });
-    } catch (_) {}
-  }, [resolvedDeviceId]);
+  // applySnapshot normalises a raw queue data object and updates state.
+  const applySnapshot = useCallback((d) => {
+    setQueue({
+      current:  d?.current  || null,
+      upcoming: d?.upcoming || [],
+      playing:  !!d?.playing,
+    });
+  }, []);
+
+  // One initial REST call to hydrate the queue display when the component
+  // mounts (or the target device changes). After that, all updates come via
+  // the 'deezer_queue' CustomEvent dispatched by app.js from the WebSocket —
+  // no polling needed.
+  useEffect(() => {
+    if (!resolvedDeviceId) return;
+    api.deezerQueueStatus(resolvedDeviceId)
+      .then(res => applySnapshot(res?.data || res))
+      .catch(() => {});
+  }, [resolvedDeviceId, applySnapshot]);
 
   useEffect(() => {
-    refreshQueue();
-    const t = setInterval(refreshQueue, 3000);
-    return () => clearInterval(t);
-  }, [refreshQueue]);
+    const handler = (e) => {
+      const msg = e.detail || {};
+      if (msg.deviceId === resolvedDeviceId) {
+        applySnapshot(msg.data);
+      }
+    };
+    window.addEventListener('deezer_queue', handler);
+    return () => window.removeEventListener('deezer_queue', handler);
+  }, [resolvedDeviceId, applySnapshot]);
 
   // ── accordion ────────────────────────────────────────────────────────────
 
@@ -172,7 +183,6 @@ export function DeezerBrowser({ devices, deviceId }) {
         await api.deezerQueueAdd(devId, tracks);
         setStatus(`Aggiunto: ${item.name || item.title}`);
       }
-      await refreshQueue(devId);
       setTimeout(() => setStatus(''), 2500);
     } catch (err) {
       console.error(err);
@@ -187,13 +197,13 @@ export function DeezerBrowser({ devices, deviceId }) {
 
   async function stopQueue() {
     if (!resolvedDeviceId) return;
-    try { await api.deezerQueueStop(resolvedDeviceId); await refreshQueue(); }
+    try { await api.deezerQueueStop(resolvedDeviceId); }
     catch (e) { console.error(e); }
   }
 
   async function removeUpcoming(index) {
     if (!resolvedDeviceId) return;
-    try { await api.deezerQueueRemove(resolvedDeviceId, index); await refreshQueue(); }
+    try { await api.deezerQueueRemove(resolvedDeviceId, index); }
     catch (e) { console.error(e); }
   }
 
