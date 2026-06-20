@@ -129,14 +129,23 @@ func (app *WebApp) MountWeb(r chi.Router, discoveryService *discovery.UnifiedDis
 				r.Get("/artist/{artistId}/radio", app.HandleDeezerArtistRadio)
 				r.Get("/album/{albumId}/tracks", app.HandleDeezerAlbumTracks)
 
-				// Single queue per device. POST /queue = replace+play (▶).
-				// POST /queue/add = append (also starts if idle). GET /queue/status,
-				// DELETE /queue/track?index=N, POST /queue/stop.
+				// Single queue per device.
+				//   POST   /queue         — replace + start immediately (▶ on result row)
+				//   POST   /queue/add     — append; starts if idle, appends if paused (+)
+				//   GET    /queue/status  — snapshot: current / upcoming / playing / paused
+				//   POST   /queue/stop    — stop + park remaining tracks (■)
+				//   POST   /queue/play    — resume from parked tracks (▶ in queue panel)
+				//   POST   /queue/next    — skip current track (⏭)
+				//   POST   /queue/clear   — wipe upcoming / parked list (✕)
+				//   POST   /queue/remove  — remove upcoming[index]
 				r.Post("/devices/{id}/queue", app.HandleDeezerQueueReplace)
 				r.Post("/devices/{id}/queue/add", app.HandleDeezerQueueAdd)
 				r.Get("/devices/{id}/queue/status", app.HandleDeezerQueueStatus)
-				r.Post("/devices/{id}/queue/remove", app.HandleDeezerQueueRemove)
 				r.Post("/devices/{id}/queue/stop", app.HandleDeezerQueueStop)
+				r.Post("/devices/{id}/queue/play", app.HandleDeezerQueuePlay)
+				r.Post("/devices/{id}/queue/next", app.HandleDeezerQueueSkip)
+				r.Post("/devices/{id}/queue/clear", app.HandleDeezerQueueClear)
+				r.Post("/devices/{id}/queue/remove", app.HandleDeezerQueueRemove)
 			})
 
 			r.Route("/radiobrowser", func(r chi.Router) {

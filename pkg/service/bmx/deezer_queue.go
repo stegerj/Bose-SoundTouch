@@ -3,6 +3,8 @@ package bmx
 import (
 	"fmt"
 	"log"
+	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -10,10 +12,8 @@ import (
 	"github.com/gesellix/bose-soundtouch/pkg/models"
 )
 
-// QueueTrack describes a single playable item in a queue, identified by its
-// Deezer catalog ID. The device's own Deezer integration resolves and
-// streams the audio from that ID — the same mechanism the classic single
-// track/album play path (HandlePlayDeezer) already uses successfully.
+// QueueTrack describes a single playable item, identified by its Deezer
+// catalog ID. The device resolves and streams audio from that ID natively.
 type QueueTrack struct {
 	ID       int64  `json:"id"`
 	Title    string `json:"title"`
@@ -21,19 +21,23 @@ type QueueTrack struct {
 	CoverURL string `json:"cover_url"`
 }
 
-// QueueSnapshot is what the UI polls for: the currently-playing track
-// (nil when idle) and the remaining upcoming tracks.
+// QueueSnapshot is what the UI receives on every state change.
+//   - Playing: current is set, playing=true
+//   - Paused:  current is nil, paused=true, upcoming has the parked list
+//   - Empty:   everything nil/false/empty
 type QueueSnapshot struct {
 	Current  *QueueTrack  `json:"current"`
 	Upcoming []QueueTrack `json:"upcoming"`
 	Playing  bool         `json:"playing"`
+	Paused   bool         `json:"paused"`
 }
 
 type Queue struct {
 	mu            sync.Mutex
 	deviceIP      string
-	tracks        []QueueTrack // shrinks as tracks are consumed
-	stop          chan struct{}
+	tracks        []QueueTrack // tracks[0] = currently playing; shrinks as consumed
+	stop          chan struct{} // close to stop playback (parks remaining tracks)
+	skip          chan struct{} // send to skip current track
 	spkClient     *client.Client
 	sourceAccount string
 }
@@ -41,29 +45,26 @@ type Queue struct {
 var (
 	activeQueues   = map[string]*Queue{}
 	activeQueuesMu sync.Mutex
+
+	// parkedTracks holds the remaining track list after StopQueue.
+	// PlayQueue drains it and restarts the goroutine.
+	parkedTracks = map[string][]QueueTrack{}
+	parkedMu     sync.Mutex
 )
 
 // ── broadcaster registration ─────────────────────────────────────────────────
-// The soundtouchweb layer registers a push function here once at startup.
-// Whenever the queue state changes (track advance, add, remove, end) the bmx
-// package calls it so the WebSocket hub can fan the update out to all clients
-// without any client needing to poll.
 
 var (
 	queueBroadcaster   func(deviceIP string, snap QueueSnapshot)
 	queueBroadcasterMu sync.RWMutex
 )
 
-// RegisterQueueBroadcaster stores fn as the callback invoked on every queue
-// state change. Call this once during WebApp initialisation.
 func RegisterQueueBroadcaster(fn func(deviceIP string, snap QueueSnapshot)) {
 	queueBroadcasterMu.Lock()
 	queueBroadcaster = fn
 	queueBroadcasterMu.Unlock()
 }
 
-// notifyQueueChange snapshots the queue and calls the registered broadcaster.
-// Safe to call with no locks held; GetQueueSnapshot acquires its own.
 func notifyQueueChange(deviceIP string) {
 	queueBroadcasterMu.RLock()
 	fn := queueBroadcaster
@@ -73,16 +74,43 @@ func notifyQueueChange(deviceIP string) {
 	}
 }
 
-// ReplaceQueue stops any running queue on deviceIP, replaces it with the
-// given tracks and starts playback immediately. Used for ▶ actions.
+// sendDeviceKey sends a key press+release pair to the device's /key REST
+// endpoint. The queue uses this for stop/pause commands that must reach the
+// hardware, not just the Go-side queue state.
+// httpClient is the package-level client defined in deezer.go.
+func sendDeviceKey(deviceIP, keyName string) {
+	apiURL := fmt.Sprintf("http://%s:8090/key", deviceIP)
+	for _, state := range []string{"press", "release"} {
+		body := fmt.Sprintf(`<key state="%s" sender="Gabbo">%s</key>`, state, keyName)
+		req, err := http.NewRequest(http.MethodPost, apiURL, strings.NewReader(body))
+		if err != nil {
+			continue
+		}
+		req.Header.Set("Content-Type", "application/xml")
+		if resp, err := httpClient.Do(req); err == nil {
+			_ = resp.Body.Close()
+		}
+	}
+}
+
+// ── public API ───────────────────────────────────────────────────────────────
+
+// ReplaceQueue stops any running queue, discards any parked tracks, and
+// immediately starts playing the supplied list. Used for ▶ on a result row.
 func ReplaceQueue(deviceIP string, tracks []QueueTrack) *Queue {
+	parkedMu.Lock()
+	delete(parkedTracks, deviceIP)
+	parkedMu.Unlock()
+
 	q := startQueue(deviceIP, tracks)
 	notifyQueueChange(deviceIP)
 	return q
 }
 
-// AppendQueue adds tracks to the end of the running queue. If nothing is
-// running it starts playback immediately. Used for + actions.
+// AppendQueue adds tracks to the end of the queue.
+//   - If playing: appended live; playback continues without interruption.
+//   - If paused:  appended to the parked list.
+//   - If empty:   starts playback immediately.
 func AppendQueue(deviceIP string, tracks []QueueTrack) {
 	activeQueuesMu.Lock()
 	q, running := activeQueues[deviceIP]
@@ -93,23 +121,91 @@ func AppendQueue(deviceIP string, tracks []QueueTrack) {
 		q.tracks = append(q.tracks, tracks...)
 		q.mu.Unlock()
 	} else {
-		startQueue(deviceIP, tracks)
+		parkedMu.Lock()
+		parked := parkedTracks[deviceIP]
+		if len(parked) > 0 {
+			parkedTracks[deviceIP] = append(parked, tracks...)
+			parkedMu.Unlock()
+		} else {
+			parkedMu.Unlock()
+			startQueue(deviceIP, tracks)
+		}
 	}
 	notifyQueueChange(deviceIP)
 }
 
-// StopQueue cancels the active queue for deviceIP.
+// StopQueue stops playback and parks the remaining track list so PlayQueue
+// can resume it later. The currently-playing track is included in the parked
+// list so the user can replay it if they want.
 func StopQueue(deviceIP string) {
 	activeQueuesMu.Lock()
-	defer activeQueuesMu.Unlock()
-	if q, ok := activeQueues[deviceIP]; ok {
+	q, ok := activeQueues[deviceIP]
+	if ok {
+		// Snapshot BEFORE signalling stop — the goroutine's defer will call
+		// notifyQueueChange, which must already see the parked state.
+		q.mu.Lock()
+		remaining := append([]QueueTrack{}, q.tracks...)
+		q.mu.Unlock()
+
+		if len(remaining) > 0 {
+			parkedMu.Lock()
+			parkedTracks[deviceIP] = remaining
+			parkedMu.Unlock()
+		}
+
 		close(q.stop)
 		delete(activeQueues, deviceIP)
 	}
+	activeQueuesMu.Unlock()
+
+	if ok {
+		// Tell the device to actually stop playing. PAUSE rather than STOP
+		// avoids triggering a standby/power-off on some firmware versions.
+		sendDeviceKey(deviceIP, "PAUSE")
+	}
+
+	notifyQueueChange(deviceIP)
 }
 
-// RemoveFromQueue removes the upcoming track at index (0 = first upcoming,
-// not the currently-playing one). Returns an error if out of range.
+// PlayQueue resumes playback from a parked (previously stopped) queue.
+// Returns an error if there is nothing parked.
+func PlayQueue(deviceIP string) error {
+	activeQueuesMu.Lock()
+	_, running := activeQueues[deviceIP]
+	activeQueuesMu.Unlock()
+	if running {
+		return nil // already playing, nothing to do
+	}
+
+	parkedMu.Lock()
+	tracks, ok := parkedTracks[deviceIP]
+	delete(parkedTracks, deviceIP)
+	parkedMu.Unlock()
+
+	if !ok || len(tracks) == 0 {
+		return fmt.Errorf("no parked tracks to resume")
+	}
+
+	startQueue(deviceIP, tracks)
+	notifyQueueChange(deviceIP)
+	return nil
+}
+
+// SkipTrack advances to the next track immediately without stopping the queue.
+func SkipTrack(deviceIP string) {
+	activeQueuesMu.Lock()
+	q, ok := activeQueues[deviceIP]
+	activeQueuesMu.Unlock()
+
+	if ok {
+		select {
+		case q.skip <- struct{}{}:
+		default: // skip already pending
+		}
+	}
+}
+
+// RemoveFromQueue removes upcoming[index] (0 = first after current).
 func RemoveFromQueue(deviceIP string, index int) error {
 	activeQueuesMu.Lock()
 	q, running := activeQueues[deviceIP]
@@ -131,35 +227,67 @@ func RemoveFromQueue(deviceIP string, index int) error {
 	return nil
 }
 
-// GetQueueSnapshot returns the current queue state for the UI.
+// ClearUpcoming clears all tracks after the currently-playing one.
+// If paused, clears the entire parked list.
+func ClearUpcoming(deviceIP string) {
+	activeQueuesMu.Lock()
+	q, ok := activeQueues[deviceIP]
+	activeQueuesMu.Unlock()
+
+	if ok {
+		q.mu.Lock()
+		if len(q.tracks) > 1 {
+			q.tracks = q.tracks[:1]
+		}
+		q.mu.Unlock()
+	}
+
+	parkedMu.Lock()
+	delete(parkedTracks, deviceIP)
+	parkedMu.Unlock()
+
+	notifyQueueChange(deviceIP)
+}
+
+// GetQueueSnapshot returns the current state for the UI.
 func GetQueueSnapshot(deviceIP string) QueueSnapshot {
 	activeQueuesMu.Lock()
 	q, running := activeQueues[deviceIP]
 	activeQueuesMu.Unlock()
 
-	if !running {
-		return QueueSnapshot{Upcoming: []QueueTrack{}}
+	if running {
+		q.mu.Lock()
+		defer q.mu.Unlock()
+		if len(q.tracks) == 0 {
+			return QueueSnapshot{Upcoming: []QueueTrack{}}
+		}
+		cur := q.tracks[0]
+		upcoming := make([]QueueTrack, len(q.tracks)-1)
+		copy(upcoming, q.tracks[1:])
+		return QueueSnapshot{Current: &cur, Upcoming: upcoming, Playing: true}
 	}
 
-	q.mu.Lock()
-	defer q.mu.Unlock()
+	parkedMu.Lock()
+	parked := parkedTracks[deviceIP]
+	parkedMu.Unlock()
 
-	if len(q.tracks) == 0 {
-		return QueueSnapshot{Upcoming: []QueueTrack{}}
+	if len(parked) > 0 {
+		upcoming := make([]QueueTrack, len(parked))
+		copy(upcoming, parked)
+		return QueueSnapshot{Upcoming: upcoming, Paused: true}
 	}
-	cur := q.tracks[0]
-	upcoming := make([]QueueTrack, len(q.tracks)-1)
-	copy(upcoming, q.tracks[1:])
-	return QueueSnapshot{Current: &cur, Upcoming: upcoming, Playing: true}
+
+	return QueueSnapshot{Upcoming: []QueueTrack{}}
 }
 
-// ─── internal ────────────────────────────────────────────────────────────────
+// ── internal ──────────────────────────────────────────────────────────────────
 
 func startQueue(deviceIP string, tracks []QueueTrack) *Queue {
 	q := &Queue{
 		deviceIP:      deviceIP,
 		tracks:        append([]QueueTrack{}, tracks...),
 		stop:          make(chan struct{}),
+		skip:          make(chan struct{}, 1), // buffered so sender never blocks
 		spkClient:     client.NewClientFromHost(deviceIP),
 		sourceAccount: deezerAccountOrFallback(deviceIP),
 	}
@@ -183,21 +311,18 @@ func deezerAccountOrFallback(deviceIP string) string {
 }
 
 func (q *Queue) run() {
-	// cleanup runs on every exit path (normal drain, stop signal, playTrack
-	// error). notifyQueueChange is called AFTER cleanup so the broadcast
-	// reflects the idle/empty state.
+	// cleanup runs on every exit path. notifyQueueChange fires AFTER cleanup
+	// so the broadcast reflects the post-exit state (parked or empty).
 	defer func() {
 		activeQueuesMu.Lock()
 		if cur, ok := activeQueues[q.deviceIP]; ok && cur == q {
 			delete(activeQueues, q.deviceIP)
 		}
 		activeQueuesMu.Unlock()
-		notifyQueueChange(q.deviceIP) // broadcast "queue ended / idle"
+		notifyQueueChange(q.deviceIP)
 	}()
 
 	for {
-		// Peek at the first track without removing it yet — the snapshot
-		// needs it to show "currently playing".
 		q.mu.Lock()
 		if len(q.tracks) == 0 {
 			q.mu.Unlock()
@@ -206,19 +331,19 @@ func (q *Queue) run() {
 		track := q.tracks[0]
 		q.mu.Unlock()
 
-		log.Printf("[deezer-queue] Playing (%d remaining): %s — %s", q.tracksLen(), track.Title, track.Artist)
+		log.Printf("[deezer-queue] Playing (%d remaining): %s — %s",
+			q.tracksLen(), track.Title, track.Artist)
+
 		if err := q.playTrack(track); err != nil {
 			log.Printf("[deezer-queue] playTrack error: %v", err)
 			return
 		}
 
-		// Block until the device signals the track ended, or we're stopped.
 		if !q.waitForTrackEnd() {
-			return // stop requested
+			return // stop or skip-to-nothing
 		}
 
-		// Track finished: drop it from the front, then broadcast so the UI
-		// immediately reflects the new current track.
+		// Drop the finished track and broadcast so the UI updates immediately.
 		q.mu.Lock()
 		if len(q.tracks) > 0 {
 			q.tracks = q.tracks[1:]
@@ -245,26 +370,21 @@ func (q *Queue) playTrack(track QueueTrack) error {
 	})
 }
 
-// waitForTrackEnd blocks until the device signals the track has finished,
-// then returns true. Returns false only if StopQueue was called.
+// waitForTrackEnd blocks until the track ends, is skipped, or the queue is
+// stopped. Returns false only when StopQueue was called (caller should exit).
 //
-// Three conditions advance the queue:
+// Three conditions advance to the next track:
+//  1. STOPPED / STANDBY       — clean end of track.
+//  2. source="INVALID_SOURCE" — device has no Deezer account / track failed
+//     to load. Without this we hang forever (observed post-Bose-cloud-shutdown).
+//  3. 10-minute hard timeout  — safety net for any state we don't recognise.
 //
-//  1. STOPPED / STANDBY — the normal end-of-track signal.
-//  2. source == "INVALID_SOURCE" — the device reports no valid Deezer account
-//     or the track failed to load. If we don't handle this the queue hangs
-//     forever waiting for a STOPPED that never comes (observed after Bose
-//     cloud shutdown, June 2026).
-//  3. 10-minute hard timeout — safety net for any device state we don't
-//     recognise; ensures the queue always eventually advances.
+// We do NOT trigger on PLAYING: the device sends heartbeat NowPlaying updates
+// with PlayStatusPlaying throughout normal playback, so treating that as "done"
+// would cut every track short.
 //
-// We intentionally do NOT trigger on PLAYING: the device sends routine
-// NowPlaying heartbeats with PlayStatusPlaying throughout normal playback,
-// so treating PLAYING as "ended" would cut every track short after ~8 s.
-//
-// Cooldown is 8 s: buffering a native Deezer track can briefly produce a
-// transient STOPPED before the device settles into PLAYING, so we ignore all
-// events for the first 8 s after calling SelectContentItem.
+// Cooldown 8 s: buffering a Deezer track can produce a brief transient STOPPED
+// before the device settles into PLAYING; we ignore all events for the first 8 s.
 func (q *Queue) waitForTrackEnd() bool {
 	done := make(chan struct{})
 	var doneOnce sync.Once
@@ -287,55 +407,58 @@ func (q *Queue) waitForTrackEnd() bool {
 	})
 
 	if err := wsClient.Connect(); err != nil {
-		log.Printf("[deezer-queue] WebSocket connect error: %v — falling back to poll", err)
+		log.Printf("[deezer-queue] WebSocket error: %v — falling back to poll", err)
 		return q.pollForTrackEnd()
 	}
 	defer wsClient.Disconnect()
 
 	select {
 	case <-done:
-		// Small grace period so the device finishes its own state transition
-		// before we immediately fire the next SelectContentItem.
 		time.Sleep(500 * time.Millisecond)
+		return true
+	case <-q.skip:
+		log.Printf("[deezer-queue] skip requested")
 		return true
 	case <-q.stop:
 		return false
 	case <-time.After(10 * time.Minute):
-		log.Printf("[deezer-queue] track timeout after 10 min — advancing to next track")
+		log.Printf("[deezer-queue] track timeout — advancing")
 		return true
 	}
 }
 
-// pollForTrackEnd is the fallback used when the WebSocket connection fails.
-// It polls the device's REST nowPlaying endpoint every 5 seconds and returns
-// true once the device reports a terminal state past the startup cooldown.
+// pollForTrackEnd is the WebSocket-unavailable fallback.
 func (q *Queue) pollForTrackEnd() bool {
 	startTime := time.Now()
 	const cooldown = 8 * time.Second
+	deadline := time.NewTimer(10 * time.Minute)
+	defer deadline.Stop()
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
 
 	for {
 		select {
 		case <-q.stop:
 			return false
-		case <-time.After(5 * time.Second):
-		case <-time.After(10 * time.Minute):
-			log.Printf("[deezer-queue] poll timeout after 10 min — advancing to next track")
+		case <-q.skip:
 			return true
-		}
-
-		if time.Since(startTime) < cooldown {
-			continue
-		}
-
-		np, err := q.spkClient.GetNowPlaying()
-		if err != nil {
-			log.Printf("[deezer-queue] poll GetNowPlaying error: %v", err)
-			continue
-		}
-		if np.PlayStatus == models.PlayStatusStopped ||
-			np.PlayStatus == models.PlayStatusStandby ||
-			np.Source == "INVALID_SOURCE" {
+		case <-deadline.C:
+			log.Printf("[deezer-queue] poll timeout — advancing")
 			return true
+		case <-ticker.C:
+			if time.Since(startTime) < cooldown {
+				continue
+			}
+			np, err := q.spkClient.GetNowPlaying()
+			if err != nil {
+				log.Printf("[deezer-queue] poll error: %v", err)
+				continue
+			}
+			if np.PlayStatus == models.PlayStatusStopped ||
+				np.PlayStatus == models.PlayStatusStandby ||
+				np.Source == "INVALID_SOURCE" {
+				return true
+			}
 		}
 	}
 }

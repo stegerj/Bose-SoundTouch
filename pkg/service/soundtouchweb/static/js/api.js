@@ -107,10 +107,11 @@ export const api = {
         body: JSON.stringify({ tracks }),
     }),
     deezerQueueStatus: (deviceId) => req(`/api/control/providers/deezer/devices/${deviceId}/queue/status`),
+    deezerQueueStop:   (deviceId) => req(`/api/control/providers/deezer/devices/${deviceId}/queue/stop`,  { method: 'POST' }),
+    deezerQueuePlay:   (deviceId) => req(`/api/control/providers/deezer/devices/${deviceId}/queue/play`,  { method: 'POST' }),
+    deezerQueueNext:   (deviceId) => req(`/api/control/providers/deezer/devices/${deviceId}/queue/next`,  { method: 'POST' }),
+    deezerQueueClear:  (deviceId) => req(`/api/control/providers/deezer/devices/${deviceId}/queue/clear`, { method: 'POST' }),
     deezerQueueRemove: (deviceId, index) => req(`/api/control/providers/deezer/devices/${deviceId}/queue/remove?index=${index}`, {
-        method: 'POST',
-    }),
-    deezerQueueStop: (deviceId) => req(`/api/control/providers/deezer/devices/${deviceId}/queue/stop`, {
         method: 'POST',
     }),
 };

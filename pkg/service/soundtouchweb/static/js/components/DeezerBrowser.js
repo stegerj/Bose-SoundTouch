@@ -58,6 +58,7 @@ export function DeezerBrowser({ devices, deviceId }) {
       current:  d?.current  || null,
       upcoming: d?.upcoming || [],
       playing:  !!d?.playing,
+      paused:   !!d?.paused,
     });
   }, []);
 
@@ -201,6 +202,24 @@ export function DeezerBrowser({ devices, deviceId }) {
     catch (e) { console.error(e); }
   }
 
+  async function playQueue() {
+    if (!resolvedDeviceId) return;
+    try { await api.deezerQueuePlay(resolvedDeviceId); }
+    catch (e) { console.error(e); }
+  }
+
+  async function skipTrack() {
+    if (!resolvedDeviceId) return;
+    try { await api.deezerQueueNext(resolvedDeviceId); }
+    catch (e) { console.error(e); }
+  }
+
+  async function clearQueue() {
+    if (!resolvedDeviceId) return;
+    try { await api.deezerQueueClear(resolvedDeviceId); }
+    catch (e) { console.error(e); }
+  }
+
   async function removeUpcoming(index) {
     if (!resolvedDeviceId) return;
     try { await api.deezerQueueRemove(resolvedDeviceId, index); }
@@ -339,12 +358,35 @@ export function DeezerBrowser({ devices, deviceId }) {
 
       <!-- ── queue panel ── -->
       <div style=${{ background:'#1b1b1b', border:'1px solid #2a2a2a', borderRadius:'8px', padding:'12px', marginBottom:'20px' }}>
-        <!-- header -->
-        <div style=${{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: queue.current || queue.upcoming.length ? '10px' : '0' }}>
+
+        <!-- header: label + controls -->
+        <div style=${{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'10px' }}>
           <span style=${{ color:'#fff', fontWeight:600, fontSize:'14px' }}>
-            Coda${queue.upcoming.length ? ` · ${queue.upcoming.length} in attesa` : ''}
+            ${queue.playing ? '▶ In coda' : queue.paused ? '⏸ In pausa' : 'Coda'}
+            ${queue.upcoming.length ? html` <span style=${{ color:'#666', fontWeight:400 }}>· ${queue.upcoming.length} in attesa</span>` : null}
           </span>
-          ${queue.playing ? html`<button style=${{ ...S.pillBtn, background:'#555' }} onClick=${stopQueue}>■ Stop</button>` : null}
+          <div style=${{ display:'flex', gap:'6px' }}>
+            <button
+              style=${{ ...S.pillBtn, background: queue.paused ? '#34c759' : '#3a3a3a', opacity: queue.paused ? 1 : 0.35, cursor: queue.paused ? 'pointer' : 'default' }}
+              disabled=${!queue.paused}
+              onClick=${playQueue}
+              title="Riprendi">▶ Play</button>
+            <button
+              style=${{ ...S.pillBtn, background: queue.playing ? '#e05252' : '#3a3a3a', opacity: queue.playing ? 1 : 0.35, cursor: queue.playing ? 'pointer' : 'default' }}
+              disabled=${!queue.playing}
+              onClick=${stopQueue}
+              title="Ferma (conserva la lista)">■ Stop</button>
+            <button
+              style=${{ ...S.pillBtn, background: (queue.playing && queue.upcoming.length > 0) ? '#f0a030' : '#3a3a3a', opacity: (queue.playing && queue.upcoming.length > 0) ? 1 : 0.35, cursor: (queue.playing && queue.upcoming.length > 0) ? 'pointer' : 'default' }}
+              disabled=${!(queue.playing && queue.upcoming.length > 0)}
+              onClick=${skipTrack}
+              title="Prossima traccia">⏭ Next</button>
+            <button
+              style=${{ ...S.pillBtn, background: (queue.upcoming.length > 0 || queue.paused) ? '#555' : '#3a3a3a', opacity: (queue.upcoming.length > 0 || queue.paused) ? 1 : 0.35, cursor: (queue.upcoming.length > 0 || queue.paused) ? 'pointer' : 'default' }}
+              disabled=${!(queue.upcoming.length > 0 || queue.paused)}
+              onClick=${clearQueue}
+              title="Svuota lista">✕ Clear</button>
+          </div>
         </div>
 
         <!-- currently playing -->
@@ -357,11 +399,11 @@ export function DeezerBrowser({ devices, deviceId }) {
               <div style=${{ color:'#888', fontSize:'12px' }}>${queue.current.artist}</div>
             </div>
           </div>
-        ` : !queue.playing ? html`
+        ` : !queue.playing && !queue.paused ? html`
           <div style=${{ color:'#555', fontSize:'13px' }}>Nessuna traccia in coda — usa ▶ o + dai risultati.</div>
         ` : null}
 
-        <!-- upcoming -->
+        <!-- upcoming / parked list -->
         ${queue.upcoming.map((t, i) => html`
           <div key=${`upc-${i}-${t.id}`} style=${{ display:'flex', alignItems:'center', gap:'10px', padding:'6px 10px', background: i % 2 === 0 ? '#1e1e1e' : '#222', borderRadius:'4px', marginBottom:'4px' }}>
             <span style=${{ color:'#555', fontSize:'12px', width:'18px', textAlign:'right', flexShrink:0 }}>${i + 1}</span>

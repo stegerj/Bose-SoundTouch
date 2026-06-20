@@ -33,24 +33,30 @@ type DeezerArtistAlbumsResponse struct {
 
 // DeezerTrackListResponse is used for artist top tracks, artist radio, and
 // the extended artist tracklist, since all three endpoints return the same
-// shape.
+// shape. Preview holds the (only) audio actually obtainable from Deezer's
+// public, unauthenticated API: a short streamable clip URL. There is no
+// full-track audio available here.
 type DeezerTrackListResponse struct {
 	Data []struct {
-		ID    int64  `json:"id"`
-		Title string `json:"title"`
-		Album struct {
+		ID      int64  `json:"id"`
+		Title   string `json:"title"`
+		Preview string `json:"preview"`
+		Album   struct {
 			CoverSmall string `json:"cover_small"`
 			CoverMed   string `json:"cover_medium"`
 		} `json:"album"`
 	} `json:"data"`
 }
 
-// DeezerAlbumTracksResponse holds the tracks for a single album.
+// DeezerAlbumTracksResponse holds the tracks for a single album. Preview is
+// the streamable clip URL (see DeezerTrackListResponse for details); without
+// it, queued album tracks have nothing to actually play.
 type DeezerAlbumTracksResponse struct {
 	Data []struct {
 		ID       int64  `json:"id"`
 		Title    string `json:"title"`
 		Duration int    `json:"duration"` // seconds
+		Preview  string `json:"preview"`
 	} `json:"data"`
 }
 

@@ -204,15 +204,57 @@ func (app *WebApp) HandleDeezerQueueRemove(w http.ResponseWriter, r *http.Reques
 	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: snap})
 }
 
-// HandleDeezerQueueStop stops the queue and clears it entirely.
+// HandleDeezerQueueStop stops playback and parks the remaining tracks so
+// HandleDeezerQueuePlay can resume them later.
 func (app *WebApp) HandleDeezerQueueStop(w http.ResponseWriter, r *http.Request) {
 	device, exists := app.GetDevice(chi.URLParam(r, "id"))
 	if !exists {
 		app.sendError(w, "Device not found", http.StatusNotFound)
 		return
 	}
-
 	bmxpkg.StopQueue(device.DeviceInfo.IPAddress)
+	snap := bmxpkg.GetQueueSnapshot(device.DeviceInfo.IPAddress)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: snap})
+}
+
+// HandleDeezerQueuePlay resumes from a parked (stopped) queue.
+func (app *WebApp) HandleDeezerQueuePlay(w http.ResponseWriter, r *http.Request) {
+	device, exists := app.GetDevice(chi.URLParam(r, "id"))
+	if !exists {
+		app.sendError(w, "Device not found", http.StatusNotFound)
+		return
+	}
+	if err := bmxpkg.PlayQueue(device.DeviceInfo.IPAddress); err != nil {
+		app.sendError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	snap := bmxpkg.GetQueueSnapshot(device.DeviceInfo.IPAddress)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: snap})
+}
+
+// HandleDeezerQueueSkip advances to the next track immediately.
+func (app *WebApp) HandleDeezerQueueSkip(w http.ResponseWriter, r *http.Request) {
+	device, exists := app.GetDevice(chi.URLParam(r, "id"))
+	if !exists {
+		app.sendError(w, "Device not found", http.StatusNotFound)
+		return
+	}
+	bmxpkg.SkipTrack(device.DeviceInfo.IPAddress)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true})
+}
+
+// HandleDeezerQueueClear removes all upcoming tracks (and the parked list if
+// stopped). The currently-playing track (if any) continues.
+func (app *WebApp) HandleDeezerQueueClear(w http.ResponseWriter, r *http.Request) {
+	device, exists := app.GetDevice(chi.URLParam(r, "id"))
+	if !exists {
+		app.sendError(w, "Device not found", http.StatusNotFound)
+		return
+	}
+	bmxpkg.ClearUpcoming(device.DeviceInfo.IPAddress)
 	snap := bmxpkg.GetQueueSnapshot(device.DeviceInfo.IPAddress)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: snap})
