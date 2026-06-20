@@ -44,6 +44,7 @@ export function DeezerBrowser({ devices, deviceId }) {
 
   // ── queue ──
   const [queue, setQueue] = useState({ current: null, upcoming: [], playing: false, paused: false });
+  const [queueOpen, setQueueOpen] = useState(true);
   const deviceEntries    = Object.entries(devices || {}).filter(([id, dev]) => id && dev);
   const resolvedDeviceId = deviceId || (deviceEntries.length === 1 ? deviceEntries[0][0] : null);
   const [pendingAction, setPendingAction] = useState(null);
@@ -472,10 +473,13 @@ export function DeezerBrowser({ devices, deviceId }) {
 
       <!-- queue panel -->
       <div style=${{ background:'#1b1b1b', border:'1px solid #2a2a2a', borderRadius:'8px', padding:'12px', marginBottom:'20px' }}>
-        <div style=${{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'10px' }}>
-          <span style=${{ color:'#fff', fontWeight:600, fontSize:'14px' }}>
-            ${queue.playing ? '▶ In coda' : queue.paused ? '⏸ In pausa' : 'Coda'}
+        <div style=${{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: queueOpen ? '10px' : '0' }}>
+          <span style=${{ color:'#fff', fontWeight:600, fontSize:'14px', cursor:'pointer', userSelect:'none' }}
+                onClick=${() => setQueueOpen(o => !o)}>
+            ${queueOpen ? '▾' : '▸'}
+            ${' '}${queue.playing ? '▶ In coda' : queue.paused ? '⏸ In pausa' : 'Coda'}
             ${queue.upcoming.length ? html` <span style=${{ color:'#666', fontWeight:400 }}>· ${queue.upcoming.length} in attesa</span>` : null}
+            ${!queueOpen && queue.current ? html` <span style=${{ color:'#34c759', fontWeight:400, fontSize:'12px' }}> — ${queue.current.title}</span>` : null}
           </span>
           <div style=${{ display:'flex', gap:'6px' }}>
             <button style=${{ ...S.pillBtn, background: queue.paused ? '#34c759' : '#3a3a3a',
@@ -495,33 +499,35 @@ export function DeezerBrowser({ devices, deviceId }) {
           </div>
         </div>
 
-        ${queue.current ? html`
-          <div style=${{ display:'flex', alignItems:'center', gap:'10px', padding:'8px 10px', background:'#262626',
-                         borderRadius:'6px', marginBottom: queue.upcoming.length ? '8px' : '0', border:'1px solid #3a3a3a' }}>
-            ${queue.current.cover_url ? html`<img src=${queue.current.cover_url} style=${{ width:'40px', height:'40px', borderRadius:'4px', objectFit:'cover' }} />` : null}
-            <div style=${{ flex:1, minWidth:0 }}>
-              <div style=${{ color:'#34c759', fontSize:'11px', fontWeight:600, marginBottom:'2px' }}>▶ IN RIPRODUZIONE</div>
-              <div style=${{ color:'#fff', fontSize:'14px', fontWeight:500, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>${queue.current.title}</div>
-              <div style=${{ color:'#888', fontSize:'12px' }}>${queue.current.artist}</div>
+        ${queueOpen ? html`
+          ${queue.current ? html`
+            <div style=${{ display:'flex', alignItems:'center', gap:'10px', padding:'8px 10px', background:'#262626',
+                           borderRadius:'6px', marginBottom: queue.upcoming.length ? '8px' : '0', border:'1px solid #3a3a3a' }}>
+              ${queue.current.cover_url ? html`<img src=${queue.current.cover_url} style=${{ width:'40px', height:'40px', borderRadius:'4px', objectFit:'cover' }} />` : null}
+              <div style=${{ flex:1, minWidth:0 }}>
+                <div style=${{ color:'#34c759', fontSize:'11px', fontWeight:600, marginBottom:'2px' }}>▶ IN RIPRODUZIONE</div>
+                <div style=${{ color:'#fff', fontSize:'14px', fontWeight:500, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>${queue.current.title}</div>
+                <div style=${{ color:'#888', fontSize:'12px' }}>${queue.current.artist}</div>
+              </div>
             </div>
-          </div>
-        ` : !queue.playing && !queue.paused ? html`
-          <div style=${{ color:'#555', fontSize:'13px' }}>Nessuna traccia in coda — usa ▶ o + dai risultati.</div>
-        ` : null}
+          ` : !queue.playing && !queue.paused ? html`
+            <div style=${{ color:'#555', fontSize:'13px' }}>Nessuna traccia in coda — usa ▶ o + dai risultati.</div>
+          ` : null}
 
-        ${queue.upcoming.map((t, i) => html`
-          <div key=${`upc-${i}-${t.id}`} style=${{ display:'flex', alignItems:'center', gap:'10px', padding:'6px 10px',
-                                                    background: i % 2 === 0 ? '#1e1e1e' : '#222', borderRadius:'4px', marginBottom:'4px' }}>
-            <span style=${{ color:'#555', fontSize:'12px', width:'18px', textAlign:'right', flexShrink:0 }}>${i + 1}</span>
-            ${t.cover_url ? html`<img src=${t.cover_url} style=${{ width:'32px', height:'32px', borderRadius:'3px', objectFit:'cover' }} />` : null}
-            <div style=${{ flex:1, minWidth:0 }}>
-              <div style=${{ color:'#ddd', fontSize:'13px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>${t.title}</div>
-              <div style=${{ color:'#666', fontSize:'11px' }}>${t.artist}</div>
+          ${queue.upcoming.map((t, i) => html`
+            <div key=${`upc-${i}-${t.id}`} style=${{ display:'flex', alignItems:'center', gap:'10px', padding:'6px 10px',
+                                                      background: i % 2 === 0 ? '#1e1e1e' : '#222', borderRadius:'4px', marginBottom:'4px' }}>
+              <span style=${{ color:'#555', fontSize:'12px', width:'18px', textAlign:'right', flexShrink:0 }}>${i + 1}</span>
+              ${t.cover_url ? html`<img src=${t.cover_url} style=${{ width:'32px', height:'32px', borderRadius:'3px', objectFit:'cover' }} />` : null}
+              <div style=${{ flex:1, minWidth:0 }}>
+                <div style=${{ color:'#ddd', fontSize:'13px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>${t.title}</div>
+                <div style=${{ color:'#666', fontSize:'11px' }}>${t.artist}</div>
+              </div>
+              <button style=${{ ...S.pillBtn, background:'transparent', color:'#666', padding:'2px 6px', fontSize:'16px' }}
+                      onClick=${() => removeUpcoming(i)}>×</button>
             </div>
-            <button style=${{ ...S.pillBtn, background:'transparent', color:'#666', padding:'2px 6px', fontSize:'16px' }}
-                    onClick=${() => removeUpcoming(i)}>×</button>
-          </div>
-        `)}
+          `)}
+        ` : null}
       </div>
 
       <!-- device picker -->
