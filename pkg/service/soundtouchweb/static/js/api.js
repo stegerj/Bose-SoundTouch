@@ -78,6 +78,7 @@ export const api = {
     deezerArtistAlbums: (artistId) => req(`/api/control/providers/deezer/artist/${artistId}/albums`),
     deezerArtistTracklist: (artistId) => req(`/api/control/providers/deezer/artist/${artistId}/tracklist`),
     deezerArtistRadio: (artistId) => req(`/api/control/providers/deezer/artist/${artistId}/radio`),
+    deezerArtistRelated: (artistId) => req(`/api/control/providers/deezer/artist/${artistId}/related`),
     deezerAlbumTracks: (albumId) => req(`/api/control/providers/deezer/album/${albumId}/tracks`),
 
     // Deezer — legacy native Bose-source playback (device-scoped). Kept for

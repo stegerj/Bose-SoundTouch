@@ -127,6 +127,7 @@ func (app *WebApp) MountWeb(r chi.Router, discoveryService *discovery.UnifiedDis
 				r.Get("/artist/{artistId}/albums", app.HandleDeezerArtistAlbums)
 				r.Get("/artist/{artistId}/tracklist", app.HandleDeezerArtistTracklist)
 				r.Get("/artist/{artistId}/radio", app.HandleDeezerArtistRadio)
+				r.Get("/artist/{artistId}/related", app.HandleDeezerArtistRelated)
 				r.Get("/album/{albumId}/tracks", app.HandleDeezerAlbumTracks)
 
 				// Single queue per device.

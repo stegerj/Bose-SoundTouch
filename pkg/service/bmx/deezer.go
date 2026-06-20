@@ -33,30 +33,24 @@ type DeezerArtistAlbumsResponse struct {
 
 // DeezerTrackListResponse is used for artist top tracks, artist radio, and
 // the extended artist tracklist, since all three endpoints return the same
-// shape. Preview holds the (only) audio actually obtainable from Deezer's
-// public, unauthenticated API: a short streamable clip URL. There is no
-// full-track audio available here.
+// shape.
 type DeezerTrackListResponse struct {
 	Data []struct {
-		ID      int64  `json:"id"`
-		Title   string `json:"title"`
-		Preview string `json:"preview"`
-		Album   struct {
+		ID    int64  `json:"id"`
+		Title string `json:"title"`
+		Album struct {
 			CoverSmall string `json:"cover_small"`
 			CoverMed   string `json:"cover_medium"`
 		} `json:"album"`
 	} `json:"data"`
 }
 
-// DeezerAlbumTracksResponse holds the tracks for a single album. Preview is
-// the streamable clip URL (see DeezerTrackListResponse for details); without
-// it, queued album tracks have nothing to actually play.
+// DeezerAlbumTracksResponse holds the tracks for a single album.
 type DeezerAlbumTracksResponse struct {
 	Data []struct {
 		ID       int64  `json:"id"`
 		Title    string `json:"title"`
 		Duration int    `json:"duration"` // seconds
-		Preview  string `json:"preview"`
 	} `json:"data"`
 }
 
@@ -223,4 +217,28 @@ func DeezerSourceAccount(deviceIP string) string {
 		}
 	}
 	return ""
+}
+
+// DeezerArtistRelated returns a list of artists similar to the given artist.
+// The response shape is the same as an artist search result, so the frontend
+// can reuse the same mapping and render them as expandable artist rows.
+func DeezerArtistRelated(artistID string) ([]map[string]interface{}, error) {
+	apiURL := fmt.Sprintf("%s/artist/%s/related", deezerBaseURL, artistID)
+	resp, err := httpClient.Get(apiURL)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("deezer artist related failed with status %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Data []map[string]interface{} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return result.Data, nil
 }

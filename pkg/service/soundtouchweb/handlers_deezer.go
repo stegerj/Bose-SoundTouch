@@ -418,6 +418,26 @@ func (app *WebApp) HandleDeezerArtistRadio(w http.ResponseWriter, r *http.Reques
 	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: formattedTracks})
 }
 
+// HandleDeezerArtistRelated returns a list of artists similar to the given
+// artist. The response is the raw Deezer data (same shape as an artist search
+// result) so the frontend can render them as expandable artist rows.
+func (app *WebApp) HandleDeezerArtistRelated(w http.ResponseWriter, r *http.Request) {
+	artistID := chi.URLParam(r, "artistId")
+	if artistID == "" {
+		app.sendError(w, "artistId parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	related, err := bmxpkg.DeezerArtistRelated(artistID)
+	if err != nil {
+		app.sendError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: related})
+}
+
 // HandleDeezerAlbumTracks returns all tracks for a given album.
 func (app *WebApp) HandleDeezerAlbumTracks(w http.ResponseWriter, r *http.Request) {
 	albumID := chi.URLParam(r, "albumId")
