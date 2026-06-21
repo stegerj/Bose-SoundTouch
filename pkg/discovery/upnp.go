@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gesellix/bose-soundtouch/pkg/config"
-	"github.com/gesellix/bose-soundtouch/pkg/models"
+	"github.com/stegerj/bose-soundtouch/pkg/config"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
 	"golang.org/x/net/ipv4"
 )
 

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gesellix/bose-soundtouch/pkg/config"
+	"github.com/stegerj/bose-soundtouch/pkg/config"
 )
 
 func TestNewUnifiedDiscoveryService(t *testing.T) {

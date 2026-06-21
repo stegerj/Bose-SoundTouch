@@ -12,7 +12,7 @@
 //	import (
 //		"context"
 //		"time"
-//		"github.com/gesellix/bose-soundtouch/pkg/discovery"
+//		"github.com/stegerj/bose-soundtouch/pkg/discovery"
 //	)
 //
 //	ctx := context.Background()
@@ -114,8 +114,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gesellix/bose-soundtouch/pkg/config"
-	"github.com/gesellix/bose-soundtouch/pkg/models"
+	"github.com/stegerj/bose-soundtouch/pkg/config"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
 )
 
 // UnifiedDiscoveryService combines SSDP and mDNS discovery methods

@@ -6,8 +6,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/gesellix/bose-soundtouch/pkg/config"
-	"github.com/gesellix/bose-soundtouch/pkg/discovery"
+	"github.com/stegerj/bose-soundtouch/pkg/config"
+	"github.com/stegerj/bose-soundtouch/pkg/discovery"
 )
 
 // Example demonstrates basic device discovery.

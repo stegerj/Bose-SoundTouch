@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gesellix/bose-soundtouch/pkg/models"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
 )
 
 func TestUPnP_EnrichDeviceInfo_RealDeviceXML(t *testing.T) {

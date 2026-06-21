@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gesellix/bose-soundtouch/pkg/config"
-	"github.com/gesellix/bose-soundtouch/pkg/models"
+	"github.com/stegerj/bose-soundtouch/pkg/config"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
 )
 
 func TestNewDiscoveryService(t *testing.T) {
