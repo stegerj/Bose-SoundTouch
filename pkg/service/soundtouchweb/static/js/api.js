@@ -1,8 +1,27 @@
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
+/**
+ * Universal safe request helper with comprehensive error interceptors
+ */
 async function req(url, opts = {}) {
-    const r = await fetch(url, opts);
-    return r.json();
+    try {
+        const r = await fetch(url, opts);
+        if (!r.ok) {
+            let errorMsg = `HTTP Error ${r.status}`;
+            try {
+                const errJson = await r.json();
+                if (errJson && errJson.error) {
+                    errorMsg = errJson.error;
+                } else if (errJson && errJson.message) {
+                    errorMsg = errJson.message;
+                }
+            } catch (_) {}
+            return { success: false, error: errorMsg };
+        }
+        return await r.json();
+    } catch (err) {
+        return { success: false, error: err.message || 'Network request failed' };
+    }
 }
 
 export const api = {
@@ -72,18 +91,14 @@ export const api = {
     },
     libraryPlay: (id, body) => req(`/api/control/devices/${id}/library/play`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(body) }),
 
-    // Deezer — browse (global, not device-scoped)
+    // Deezer — global catalog searches & detailed items
     deezerSearch: (q, type) => req(`/api/control/providers/deezer/search?q=${encodeURIComponent(q)}${type ? `&type=${encodeURIComponent(type)}` : ''}`),
     deezerArtistDetails:   (artistId) => req(`/api/control/providers/deezer/artist/${artistId}`),
     deezerArtistTracklist: (artistId) => req(`/api/control/providers/deezer/artist/${artistId}/tracklist`),
     deezerArtistRelated:   (artistId) => req(`/api/control/providers/deezer/artist/${artistId}/related`),
     deezerAlbumTracks:     (albumId)  => req(`/api/control/providers/deezer/album/${albumId}/tracks`),
 
-    // Deezer — single queue per device.
-    // deezerQueueAdd:     appends to the end; starts if nothing is playing (+).
-    // deezerQueueStatus:  returns { current, upcoming, playing }.
-    // deezerQueueRemove:  removes upcoming[index] (0 = first upcoming, not current).
-    // deezerQueueStop:    stops playback and clears the queue.
+    // Deezer — device-specific playback queues
     deezerQueueReplace: (deviceId, tracks) => req(`/api/control/providers/deezer/devices/${deviceId}/queue`, {
         method: 'POST',
         headers: JSON_HEADERS,

@@ -5,29 +5,49 @@ import { api } from '../api.js';
 
 const html = htm.bind(h);
 
-// ─── shared styles ───────────────────────────────────────────────────────────
+// ─── shared styles (defined outside to avoid re-allocation on render) ────────
 
 const S = {
-  pillBtn: { padding: '6px 12px', borderRadius: '4px', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '13px' },
+  pillBtn: { padding: '6px 12px', borderRadius: '4px', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '13px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' },
   play:    { padding: '4px 10px', background: '#34c759', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' },
   add:     { padding: '4px 10px', background: '#007aff', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' },
   expand:  { padding: '4px 8px',  background: '#333',    color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' },
+
+  // Clean Row container bindings for optimized GC on embedded systems
+  rowOuterStyle: (depth, bg) => ({
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '8px 10px',
+    background: bg,
+    borderRadius: '6px',
+    marginLeft: `${depth * 24}px`
+  }),
+  rowInnerStyle: (isExpandable) => ({
+    flex: 1,
+    minWidth: 0,
+    cursor: isExpandable ? 'pointer' : 'default'
+  }),
+  rowTextTitle: { color: '#fff', fontWeight: 500, fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  rowTextSubtitle: { color: '#888', fontSize: '12px' },
+  rowActions: { display: 'flex', gap: '6px', alignItems: 'center', flexShrink: 0 },
 };
 
-// Normalises any track-like object into the canonical shape the queue and
-// render functions expect. id, title, artist, cover_url are all that matter.
+// Normalises any track-like object into the canonical shape.
+// Ensures BOTH cover_url and imageUrl are set to fix the search/track rendering bug.
 function normTrack({ id, title, name, artist, subtitle, imageUrl, cover_url }) {
+  const finalId = id ? Number(id) : 0;
+  const imageSource = imageUrl || cover_url || '';
   return {
-    id:        Number(id),
+    id:        Number.isNaN(finalId) ? 0 : finalId,
     title:     title || name || 'Traccia sconosciuta',
     artist:    artist || subtitle || 'Artista sconosciuto',
-    cover_url: imageUrl || cover_url || '',
+    cover_url: imageSource,
+    imageUrl:  imageSource, // Fallback for components scanning this property specifically
   };
 }
 
-// Fetches top-5 tracks + full album list + related artists for an artist in
-// one round-trip pair (details + related fire in parallel). Extracted at module
-// level so toggleExpand and showArtistPage don't duplicate this logic.
+// Fetches top-5 tracks + full album list + related artists in parallel.
 async function fetchArtistData(artist) {
   const [detailsRes, relatedRes] = await Promise.all([
     api.deezerArtistDetails(artist.id),
@@ -62,9 +82,6 @@ export function DeezerBrowser({ devices, deviceId }) {
   const [expanded, setExpanded] = useState({});
 
   // ── artist page navigation ──
-  // artistPage: null = show search results; object = show that artist's page.
-  // artistHistory: stack of previous pages so the back button works across
-  // multiple related-artist hops without re-fetching.
   const [artistPage,    setArtistPage]    = useState(null);
   const [artistHistory, setArtistHistory] = useState([]);
 
@@ -103,8 +120,6 @@ export function DeezerBrowser({ devices, deviceId }) {
   // ── artist page navigation ────────────────────────────────────────────────
 
   async function showArtistPage(artist) {
-    // Push current page to history (if any) so back restores it without
-    // re-fetching. Then immediately show a loading state for the new artist.
     setArtistHistory(prev => artistPage ? [...prev, artistPage] : prev);
     setArtistPage({ artist, tracks: [], albums: [], related: [], loading: true });
     setExpanded({});
@@ -115,17 +130,16 @@ export function DeezerBrowser({ devices, deviceId }) {
     } catch (err) {
       console.error(err);
       setStatus("Errore nel caricamento dell'artista.");
+      setTimeout(() => setStatus(''), 4000);
       goBack();
     }
   }
 
   function goBack() {
     if (artistHistory.length > 0) {
-      // Restore previous artist page (already has data — no re-fetch).
       setArtistPage(artistHistory[artistHistory.length - 1]);
       setArtistHistory(prev => prev.slice(0, -1));
     } else {
-      // Back to search results.
       setArtistPage(null);
     }
     setExpanded({});
@@ -138,7 +152,11 @@ export function DeezerBrowser({ devices, deviceId }) {
   async function toggleExpand(item, type) {
     const key = eKey(type, item.id);
     if (expanded[key]) {
-      setExpanded(p => { const n = { ...p }; delete n[key]; return n; });
+      // Functional immutable deletion pattern (no live mutation operations on state)
+      setExpanded(p => {
+        const { [key]: _, ...rest } = p;
+        return rest;
+      });
       return;
     }
     setExpanded(p => ({ ...p, [key]: { loading: true, tracks: [], albums: [], related: [] } }));
@@ -153,7 +171,11 @@ export function DeezerBrowser({ devices, deviceId }) {
     } catch (err) {
       console.error(err);
       setStatus('Errore nel caricamento dei dettagli.');
-      setExpanded(p => { const n = { ...p }; delete n[key]; return n; });
+      setTimeout(() => setStatus(''), 4000);
+      setExpanded(p => {
+        const { [key]: _, ...rest } = p;
+        return rest;
+      });
     }
   }
 
@@ -186,7 +208,13 @@ export function DeezerBrowser({ devices, deviceId }) {
     } else if (type === 'album') {
       setLoading(true);
       try   { tracks = await fetchAlbumTracks(item); }
-      catch (e) { console.error(e); setStatus('Impossibile caricare le tracce.'); setLoading(false); return; }
+      catch (e) {
+        console.error(e);
+        setStatus('Impossibile caricare le tracce.');
+        setTimeout(() => setStatus(''), 4000);
+        setLoading(false);
+        return;
+      }
       finally   { setLoading(false); }
     } else if (type === 'artist') {
       setLoading(true);
@@ -196,11 +224,21 @@ export function DeezerBrowser({ devices, deviceId }) {
           id: t.id, title: t.title, artist: item.name,
           imageUrl: t.album?.cover_medium || t.album?.cover_small || item.imageUrl || '',
         }));
-      } catch (e) { console.error(e); setStatus('Impossibile caricare la tracklist.'); setLoading(false); return; }
+      } catch (e) {
+        console.error(e);
+        setStatus('Impossibile caricare la tracklist.');
+        setTimeout(() => setStatus(''), 4000);
+        setLoading(false);
+        return;
+      }
       finally     { setLoading(false); }
     }
 
-    if (!tracks.length) { setStatus('Nessuna traccia valida.'); return; }
+    if (!tracks.length) {
+      setStatus('Nessuna traccia valida.');
+      setTimeout(() => setStatus(''), 4000);
+      return;
+    }
     const task = { action, item: { ...item, type }, tracks };
     if (devId) { await executeTask(devId, task); }
     else       { setPendingAction(task); }
@@ -220,7 +258,8 @@ export function DeezerBrowser({ devices, deviceId }) {
       setTimeout(() => setStatus(''), 2500);
     } catch (err) {
       console.error(err);
-      setStatus(`Errore: ${err.message}`);
+      setStatus(`Errore: ${err.message || "Impossibile completare l'azione"}`);
+      setTimeout(() => setStatus(''), 4000);
     } finally {
       setLoading(false);
       setPendingAction(null);
@@ -244,10 +283,18 @@ export function DeezerBrowser({ devices, deviceId }) {
     try {
       const res  = await api.deezerSearch(q, type);
       const list = res?.data;
-      if (!Array.isArray(list) || !list.length) { setStatus('Nessun risultato.'); return; }
+      if (!Array.isArray(list) || !list.length) {
+        setStatus('Nessun risultato.');
+        setTimeout(() => setStatus(''), 4000);
+        return;
+      }
       setStatus(`${list.length} risultati:`);
       setSections([{ name: `${type[0].toUpperCase() + type.slice(1)} Risultati`, items: mapItems(list, type) }]);
-    } catch (e) { console.error(e); setStatus('Errore nella ricerca.'); }
+    } catch (e) {
+      console.error(e);
+      setStatus('Errore nella ricerca.');
+      setTimeout(() => setStatus(''), 4000);
+    }
     finally     { setLoading(false); }
   }
 
@@ -276,31 +323,29 @@ export function DeezerBrowser({ devices, deviceId }) {
 
   // ── render helpers ───────────────────────────────────────────────────────
 
-  // renderRow: used for search results (all types) and for album rows inside
-  // artist pages. Artists in search results still use the inline accordion.
   function renderRow(item, contextList, depth = 0) {
     if (!item) return null;
     const type = item.type || searchType;
     const key  = eKey(type, item.id);
 
-    // Artists expand inline in search results; albums expand inline everywhere.
     const isExpandable = type === 'album' || type === 'artist';
     const entry  = expanded[key];
     const isOpen = !!entry;
     const bg     = depth === 0 ? '#1e1e1e' : '#181818';
 
+    // Fixed: Defensive assignment to support both cover_url and imageUrl
+    const artworkUrl = item.imageUrl || item.cover_url || '';
+
     return html`<div key=${key}>
-      <div style=${{ display:'flex', alignItems:'center', gap:'10px', padding:'8px 10px',
-                     background:bg, borderRadius:'6px', marginLeft:`${depth * 24}px` }}>
-        ${item.imageUrl ? html`<img src=${item.imageUrl} style=${{ width:'44px', height:'44px',
+      <div style=${S.rowOuterStyle(depth, bg)}>
+        ${artworkUrl ? html`<img src=${artworkUrl} style=${{ width:'44px', height:'44px',
             borderRadius: type === 'artist' ? '50%' : '4px', objectFit:'cover', flexShrink:0 }} />` : null}
-        <div style=${{ flex:1, minWidth:0, cursor: isExpandable ? 'pointer' : 'default' }}
+        <div style=${S.rowInnerStyle(isExpandable)}
              onClick=${() => isExpandable && toggleExpand(item, type)}>
-          <div style=${{ color:'#fff', fontWeight:500, fontSize:'14px', whiteSpace:'nowrap',
-                         overflow:'hidden', textOverflow:'ellipsis' }}>${item.name || item.title}</div>
-          <div style=${{ color:'#888', fontSize:'12px' }}>${item.subtitle || item.artist || ''}</div>
+          <div style=${S.rowTextTitle}>${item.name || item.title}</div>
+          <div style=${S.rowTextSubtitle}>${item.subtitle || item.artist || ''}</div>
         </div>
-        <div style=${{ display:'flex', gap:'6px', alignItems:'center', flexShrink:0 }}>
+        <div style=${S.rowActions}>
           ${isExpandable ? html`<button style=${S.expand} onClick=${() => toggleExpand(item, type)}>${isOpen ? '▾' : '▸'}</button>` : null}
           <button style=${S.play} onClick=${(e) => { e.stopPropagation(); handleAction('play', { ...item, type }, contextList); }}
                   title=${type === 'artist' ? 'Top 50' : 'Riproduci'}>${type === 'artist' ? '▶ Top 50' : '▶'}</button>
@@ -349,14 +394,12 @@ export function DeezerBrowser({ devices, deviceId }) {
     </div>`;
   }
 
-  // renderRelatedArtistRow: compact row used for related artists both inside
-  // the search-result accordion and inside artist pages. Clicking the name
-  // navigates to that artist's page (no inline expand — avoids overloading).
   function renderRelatedArtistRow(artist) {
+    const artworkUrl = artist.imageUrl || artist.cover_url || '';
     return html`
       <div key=${artist.id} style=${{ display:'flex', alignItems:'center', gap:'8px', padding:'6px 8px',
                                       background:'#252525', borderRadius:'4px', marginBottom:'4px' }}>
-        ${artist.imageUrl ? html`<img src=${artist.imageUrl} style=${{ width:'36px', height:'36px',
+        ${artworkUrl ? html`<img src=${artworkUrl} style=${{ width:'36px', height:'36px',
             borderRadius:'50%', objectFit:'cover', flexShrink:0 }} />` : null}
         <div style=${{ flex:1, minWidth:0, cursor:'pointer' }} onClick=${() => showArtistPage(artist)}>
           <div style=${{ color:'#fff', fontSize:'13px', fontWeight:500, whiteSpace:'nowrap',
@@ -371,8 +414,6 @@ export function DeezerBrowser({ devices, deviceId }) {
     `;
   }
 
-  // renderArtistPage: full-page view for a single artist, shown instead of
-  // search results when artistPage is set.
   function renderArtistPage() {
     const { artist, tracks, albums, related, loading: pageLoading } = artistPage;
 
@@ -420,7 +461,7 @@ export function DeezerBrowser({ devices, deviceId }) {
           `)}
         ` : null}
 
-        <!-- albums (use existing renderRow for inline expand) -->
+        <!-- albums -->
         ${albums.length ? html`
           <div style=${{ color:'#aaa', fontSize:'11px', fontWeight:600, letterSpacing:'.05em', padding:'12px 0 8px' }}>ALBUM</div>
           <div style=${{ display:'flex', flexDirection:'column', gap:'6px' }}>
@@ -428,7 +469,7 @@ export function DeezerBrowser({ devices, deviceId }) {
           </div>
         ` : null}
 
-        <!-- related artists (navigate, don't expand inline) -->
+        <!-- related artists -->
         ${related.length ? html`
           <div style=${{ color:'#aaa', fontSize:'11px', fontWeight:600, letterSpacing:'.05em', padding:'12px 0 8px' }}>ARTISTI CORRELATI</div>
           ${related.map(a => renderRelatedArtistRow(a))}

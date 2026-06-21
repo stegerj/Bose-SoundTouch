@@ -118,7 +118,7 @@ func (app *WebApp) MountWeb(r chi.Router, discoveryService *discovery.UnifiedDis
 				r.Get("/search/next", app.HandleTuneInSearchNext)
 				r.Get("/navigate", app.HandleTuneInNavigate)
 				r.Get("/navigate/*", app.HandleTuneInNavigate)
-			}) // <-- Rimosse le virgole errate qui
+			})
 
 			r.Route("/deezer", func(r chi.Router) {
 				r.Get("/search", app.HandleDeezerSearch)
@@ -154,7 +154,7 @@ func (app *WebApp) MountWeb(r chi.Router, discoveryService *discovery.UnifiedDis
 				r.Get("/servers", app.HandleDiscoverLibraryServers)
 			})
 		})
-	}) // <-- Aggiunta la chiusura mancante dell'albero /api/control
+	})
 
 	// SPA — served under /app/*. The client navigates via component state
 	// rather than the URL, so these entries only ensure deep links and

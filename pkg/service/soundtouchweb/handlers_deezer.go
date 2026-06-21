@@ -2,9 +2,12 @@ package soundtouchweb
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
+	"sync"
 
 	"github.com/gorilla/websocket"
 	bmxpkg "github.com/gesellix/bose-soundtouch/pkg/service/bmx"
@@ -12,10 +15,25 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+// sendSuccessJSON handles standard envelope formatting and content-type headers.
+func sendSuccessJSON(w http.ResponseWriter, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: data}); err != nil {
+		log.Printf("[deezer-handler] failed to encode response: %v", err)
+	}
+}
+
+// ============================================================================
+// API HANDLERS
+// ============================================================================
+
 // HandleDeezerSearch handles Deezer search requests.
 func (app *WebApp) HandleDeezerSearch(w http.ResponseWriter, r *http.Request) {
-	query := r.URL.Query().Get("q")
-	// Ripristinato il parsing originale tramite Chi per compatibilità con il frontend
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	searchType := chi.URLParam(r, "type")
 	if searchType == "" {
 		searchType = r.URL.Query().Get("type")
@@ -32,13 +50,15 @@ func (app *WebApp) HandleDeezerSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: rawItems})
+	if rawItems == nil {
+		rawItems = []map[string]interface{}{}
+	}
+
+	sendSuccessJSON(w, rawItems)
 }
 
 // HandleDeezerQueueReplace replaces the current queue with the supplied
-// tracklist and starts playing immediately. This is the ▶ play action —
-// the old queue (if any) is discarded.
+// tracklist and starts playing immediately. This is the ▶ play action.
 func (app *WebApp) HandleDeezerQueueReplace(w http.ResponseWriter, r *http.Request) {
 	device, exists := app.GetDevice(chi.URLParam(r, "id"))
 	if !exists {
@@ -60,14 +80,11 @@ func (app *WebApp) HandleDeezerQueueReplace(w http.ResponseWriter, r *http.Reque
 	}
 
 	bmxpkg.ReplaceQueue(device.DeviceInfo.IPAddress, req.Tracks)
-
 	snap := bmxpkg.GetQueueSnapshot(device.DeviceInfo.IPAddress)
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: snap})
+	sendSuccessJSON(w, snap)
 }
 
-// HandleDeezerQueueAdd appends tracks to the end of the current queue. If
-// nothing is playing it starts immediately. This is the + add action.
+// HandleDeezerQueueAdd appends tracks to the end of the current queue.
 func (app *WebApp) HandleDeezerQueueAdd(w http.ResponseWriter, r *http.Request) {
 	device, exists := app.GetDevice(chi.URLParam(r, "id"))
 	if !exists {
@@ -89,14 +106,11 @@ func (app *WebApp) HandleDeezerQueueAdd(w http.ResponseWriter, r *http.Request) 
 	}
 
 	bmxpkg.AppendQueue(device.DeviceInfo.IPAddress, req.Tracks)
-
 	snap := bmxpkg.GetQueueSnapshot(device.DeviceInfo.IPAddress)
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: snap})
+	sendSuccessJSON(w, snap)
 }
 
-// HandleDeezerQueueStatus returns the queue snapshot: currently-playing
-// track (nil when idle) plus the upcoming tracks.
+// HandleDeezerQueueStatus returns the queue snapshot.
 func (app *WebApp) HandleDeezerQueueStatus(w http.ResponseWriter, r *http.Request) {
 	device, exists := app.GetDevice(chi.URLParam(r, "id"))
 	if !exists {
@@ -105,12 +119,10 @@ func (app *WebApp) HandleDeezerQueueStatus(w http.ResponseWriter, r *http.Reques
 	}
 
 	snap := bmxpkg.GetQueueSnapshot(device.DeviceInfo.IPAddress)
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: snap})
+	sendSuccessJSON(w, snap)
 }
 
-// HandleDeezerQueueRemove removes one upcoming track by index (0 = first
-// upcoming, not the currently-playing one).
+// HandleDeezerQueueRemove removes one upcoming track by index (0 = first upcoming).
 func (app *WebApp) HandleDeezerQueueRemove(w http.ResponseWriter, r *http.Request) {
 	device, exists := app.GetDevice(chi.URLParam(r, "id"))
 	if !exists {
@@ -118,49 +130,55 @@ func (app *WebApp) HandleDeezerQueueRemove(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	index, err := strconv.Atoi(r.URL.Query().Get("index"))
+	idxStr := r.URL.Query().Get("index")
+	if idxStr == "" {
+		app.sendError(w, "missing required 'index' parameter", http.StatusBadRequest)
+		return
+	}
+
+	index, err := strconv.Atoi(idxStr)
 	if err != nil {
 		app.sendError(w, "index query parameter must be an integer", http.StatusBadRequest)
 		return
 	}
+
 	if err := bmxpkg.RemoveFromQueue(device.DeviceInfo.IPAddress, index); err != nil {
 		app.sendError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	snap := bmxpkg.GetQueueSnapshot(device.DeviceInfo.IPAddress)
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: snap})
+	sendSuccessJSON(w, snap)
 }
 
-// HandleDeezerQueueStop stops playback and parks the remaining tracks so
-// HandleDeezerQueuePlay can resume them later.
+// HandleDeezerQueueStop stops playback and parks remaining tracks.
 func (app *WebApp) HandleDeezerQueueStop(w http.ResponseWriter, r *http.Request) {
 	device, exists := app.GetDevice(chi.URLParam(r, "id"))
 	if !exists {
 		app.sendError(w, "Device not found", http.StatusNotFound)
 		return
 	}
+
 	bmxpkg.StopQueue(device.DeviceInfo.IPAddress)
 	snap := bmxpkg.GetQueueSnapshot(device.DeviceInfo.IPAddress)
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: snap})
+	sendSuccessJSON(w, snap)
 }
 
-// HandleDeezerQueuePlay resumes from a parked (stopped) queue.
+// HandleDeezerQueuePlay resumes from a parked queue.
 func (app *WebApp) HandleDeezerQueuePlay(w http.ResponseWriter, r *http.Request) {
 	device, exists := app.GetDevice(chi.URLParam(r, "id"))
 	if !exists {
 		app.sendError(w, "Device not found", http.StatusNotFound)
 		return
 	}
+
 	if err := bmxpkg.PlayQueue(device.DeviceInfo.IPAddress); err != nil {
 		app.sendError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+
 	snap := bmxpkg.GetQueueSnapshot(device.DeviceInfo.IPAddress)
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: snap})
+	sendSuccessJSON(w, snap)
 }
 
 // HandleDeezerQueueSkip advances to the next track immediately.
@@ -170,26 +188,27 @@ func (app *WebApp) HandleDeezerQueueSkip(w http.ResponseWriter, r *http.Request)
 		app.sendError(w, "Device not found", http.StatusNotFound)
 		return
 	}
+
 	bmxpkg.SkipTrack(device.DeviceInfo.IPAddress)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true})
 }
 
-// HandleDeezerQueueClear removes all upcoming tracks (and the parked list if
-// stopped). The currently-playing track (if any) continues.
+// HandleDeezerQueueClear removes all upcoming tracks (and parked tracks if stopped).
 func (app *WebApp) HandleDeezerQueueClear(w http.ResponseWriter, r *http.Request) {
 	device, exists := app.GetDevice(chi.URLParam(r, "id"))
 	if !exists {
 		app.sendError(w, "Device not found", http.StatusNotFound)
 		return
 	}
+
 	bmxpkg.ClearUpcoming(device.DeviceInfo.IPAddress)
 	snap := bmxpkg.GetQueueSnapshot(device.DeviceInfo.IPAddress)
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: snap})
+	sendSuccessJSON(w, snap)
 }
 
 // HandleDeezerArtistDetails returns the full album list and top tracks for an artist.
+// Uses concurrent goroutines to fetch albums and tracks in parallel.
 func (app *WebApp) HandleDeezerArtistDetails(w http.ResponseWriter, r *http.Request) {
 	artistID := chi.URLParam(r, "artistId")
 	if artistID == "" {
@@ -197,19 +216,37 @@ func (app *WebApp) HandleDeezerArtistDetails(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	albumsData, err := bmxpkg.DeezerArtistAlbums(artistID)
-	if err != nil {
-		app.sendError(w, err.Error(), http.StatusInternalServerError)
+	var (
+		albumsData *bmxpkg.DeezerArtistAlbumsResponse
+		tracksData *bmxpkg.DeezerTrackListResponse
+		errAlbums  error
+		errTracks  error
+		wg         sync.WaitGroup
+	)
+
+	// Fetch assets concurrently to minimize frontend blocking latency
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		albumsData, errAlbums = bmxpkg.DeezerArtistAlbums(artistID)
+	}()
+	go func() {
+		defer wg.Done()
+		tracksData, errTracks = bmxpkg.DeezerArtistTopTracks(artistID)
+	}()
+	wg.Wait()
+
+	if errAlbums != nil {
+		app.sendError(w, fmt.Sprintf("failed to fetch albums: %v", errAlbums), http.StatusInternalServerError)
+		return
+	}
+	if errTracks != nil {
+		app.sendError(w, fmt.Sprintf("failed to fetch tracks: %v", errTracks), http.StatusInternalServerError)
 		return
 	}
 
-	tracksData, err := bmxpkg.DeezerArtistTopTracks(artistID)
-	if err != nil {
-		app.sendError(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	var formattedAlbums []map[string]interface{}
+	// Initialize slices with non-nil status to target JSON output as [] instead of null
+	formattedAlbums := make([]map[string]interface{}, 0, len(albumsData.Data))
 	for _, album := range albumsData.Data {
 		formattedAlbums = append(formattedAlbums, map[string]interface{}{
 			"id":           album.ID,
@@ -220,11 +257,11 @@ func (app *WebApp) HandleDeezerArtistDetails(w http.ResponseWriter, r *http.Requ
 		})
 	}
 
-	var formattedTracks []map[string]interface{}
+	formattedTracks := make([]map[string]interface{}, 0, len(tracksData.Data))
 	for _, track := range tracksData.Data {
 		formattedTracks = append(formattedTracks, map[string]interface{}{
-			"id":      track.ID,
-			"title":   track.Title,
+			"id":    track.ID,
+			"title": track.Title,
 			"album": map[string]string{
 				"cover_small":  track.Album.CoverSmall,
 				"cover_medium": track.Album.CoverMed,
@@ -233,18 +270,13 @@ func (app *WebApp) HandleDeezerArtistDetails(w http.ResponseWriter, r *http.Requ
 		})
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{
-		Success: true,
-		Data: map[string]interface{}{
-			"albums": formattedAlbums,
-			"tracks": formattedTracks,
-		},
+	sendSuccessJSON(w, map[string]interface{}{
+		"albums": formattedAlbums,
+		"tracks": formattedTracks,
 	})
 }
 
-// HandleDeezerArtistTracklist returns an extended track list (up to ~100 tracks)
-// for an artist. Used by the ▶ Top 50 play button.
+// HandleDeezerArtistTracklist returns an extended track list (~100 tracks) for an artist.
 func (app *WebApp) HandleDeezerArtistTracklist(w http.ResponseWriter, r *http.Request) {
 	artistID := chi.URLParam(r, "artistId")
 	if artistID == "" {
@@ -263,11 +295,11 @@ func (app *WebApp) HandleDeezerArtistTracklist(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	var formattedTracks []map[string]interface{}
+	formattedTracks := make([]map[string]interface{}, 0, len(tracksData.Data))
 	for _, track := range tracksData.Data {
 		formattedTracks = append(formattedTracks, map[string]interface{}{
-			"id":      track.ID,
-			"title":   track.Title,
+			"id":    track.ID,
+			"title": track.Title,
 			"album": map[string]string{
 				"cover_small":  track.Album.CoverSmall,
 				"cover_medium": track.Album.CoverMed,
@@ -276,13 +308,10 @@ func (app *WebApp) HandleDeezerArtistTracklist(w http.ResponseWriter, r *http.Re
 		})
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: formattedTracks})
+	sendSuccessJSON(w, formattedTracks)
 }
 
-// HandleDeezerArtistRelated returns a list of artists similar to the given
-// artist. The response is the raw Deezer data (same shape as an artist search
-// result) so the frontend can render them as expandable artist rows.
+// HandleDeezerArtistRelated returns a list of artists similar to the given artist.
 func (app *WebApp) HandleDeezerArtistRelated(w http.ResponseWriter, r *http.Request) {
 	artistID := chi.URLParam(r, "artistId")
 	if artistID == "" {
@@ -296,8 +325,11 @@ func (app *WebApp) HandleDeezerArtistRelated(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: related})
+	if related == nil {
+		related = []map[string]interface{}{}
+	}
+
+	sendSuccessJSON(w, related)
 }
 
 // HandleDeezerAlbumTracks returns all tracks for a given album.
@@ -314,7 +346,7 @@ func (app *WebApp) HandleDeezerAlbumTracks(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	var formattedTracks []map[string]interface{}
+	formattedTracks := make([]map[string]interface{}, 0, len(tracksData.Data))
 	for _, track := range tracksData.Data {
 		formattedTracks = append(formattedTracks, map[string]interface{}{
 			"id":       track.ID,
@@ -324,14 +356,11 @@ func (app *WebApp) HandleDeezerAlbumTracks(w http.ResponseWriter, r *http.Reques
 		})
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: formattedTracks})
+	sendSuccessJSON(w, formattedTracks)
 }
 
 // SetupDeezerQueueBroadcaster registers the WebApp's WebSocket broadcast
-// function with the bmx queue package. Call this once at startup (from
-// MountWeb) so every queue state change is pushed to all connected clients
-// as a "deezer_queue" message, eliminating UI polling entirely.
+// function, dispatching queue snapshot state updates concurrently and safely.
 func (app *WebApp) SetupDeezerQueueBroadcaster() {
 	bmxpkg.RegisterQueueBroadcaster(func(deviceIP string, snap bmxpkg.QueueSnapshot) {
 		message := webtypes.WebSocketMessage{
@@ -340,19 +369,31 @@ func (app *WebApp) SetupDeezerQueueBroadcaster() {
 			Data:     snap,
 		}
 
+		// Save a local snapshot of connections under a read lock immediately.
+		// Performing write processing outside of locks prevents connection degradation backdoors.
 		app.WSMutex.RLock()
-		defer app.WSMutex.RUnlock()
+		clients := make([]*websocket.Conn, 0, len(app.WSClients))
+		for client := range app.WSClients {
+			clients = append(clients, client)
+		}
+		app.WSMutex.RUnlock()
 
 		var failed []*websocket.Conn
-		for client := range app.WSClients {
+		for _, client := range clients {
 			if err := client.WriteJSON(message); err != nil {
 				log.Printf("[deezer-queue] WebSocket send error: %v", err)
 				failed = append(failed, client)
 			}
 		}
-		for _, c := range failed {
-			delete(app.WSClients, c)
-			c.Close()
+
+		// Mutate map with exclusive write access to prevent race panics
+		if len(failed) > 0 {
+			app.WSMutex.Lock()
+			for _, c := range failed {
+				delete(app.WSClients, c)
+				c.Close()
+			}
+			app.WSMutex.Unlock()
 		}
 	})
 }

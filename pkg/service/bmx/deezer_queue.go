@@ -35,12 +35,15 @@ type QueueSnapshot struct {
 type Queue struct {
 	mu            sync.Mutex
 	deviceIP      string
-	tracks        []QueueTrack // tracks[0] = currently playing; shrinks as consumed
+	tracks        []QueueTrack  // tracks[0] = currently playing; shrinks as consumed
 	stop          chan struct{} // close to stop playback (parks remaining tracks)
 	skip          chan struct{} // send to skip current track
 	spkClient     *client.Client
 	sourceAccount string
 }
+
+// httpClient is shared across all Deezer API calls with a sensible timeout.
+var httpClient = &http.Client{Timeout: 10 * time.Second}
 
 var (
 	activeQueues   = map[string]*Queue{}
@@ -102,8 +105,12 @@ func ReplaceQueue(deviceIP string, tracks []QueueTrack) *Queue {
 	delete(parkedTracks, deviceIP)
 	parkedMu.Unlock()
 
-	q := startQueue(deviceIP, tracks)
-	notifyQueueChange(deviceIP)
+	activeQueuesMu.Lock()
+	q := _startQueueLocked(deviceIP, tracks)
+	activeQueuesMu.Unlock()
+
+	// Notify queue state update asynchronously to avoid blocking execution
+	go notifyQueueChange(deviceIP)
 	return q
 }
 
@@ -114,24 +121,27 @@ func ReplaceQueue(deviceIP string, tracks []QueueTrack) *Queue {
 func AppendQueue(deviceIP string, tracks []QueueTrack) {
 	activeQueuesMu.Lock()
 	q, running := activeQueues[deviceIP]
-	activeQueuesMu.Unlock()
 
 	if running {
 		q.mu.Lock()
 		q.tracks = append(q.tracks, tracks...)
 		q.mu.Unlock()
+		activeQueuesMu.Unlock()
 	} else {
+		// Acquire parked lock inside activeQueues lock for perfect state atomic evaluation
 		parkedMu.Lock()
 		parked := parkedTracks[deviceIP]
 		if len(parked) > 0 {
 			parkedTracks[deviceIP] = append(parked, tracks...)
 			parkedMu.Unlock()
+			activeQueuesMu.Unlock()
 		} else {
 			parkedMu.Unlock()
-			startQueue(deviceIP, tracks)
+			_startQueueLocked(deviceIP, tracks)
+			activeQueuesMu.Unlock()
 		}
 	}
-	notifyQueueChange(deviceIP)
+	go notifyQueueChange(deviceIP)
 }
 
 // StopQueue stops playback and parks the remaining track list so PlayQueue
@@ -164,15 +174,16 @@ func StopQueue(deviceIP string) {
 		sendDeviceKey(deviceIP, "PAUSE")
 	}
 
-	notifyQueueChange(deviceIP)
+	go notifyQueueChange(deviceIP)
 }
 
 // PlayQueue resumes playback from a parked (previously stopped) queue.
 // Returns an error if there is nothing parked.
 func PlayQueue(deviceIP string) error {
 	activeQueuesMu.Lock()
+	defer activeQueuesMu.Unlock()
+
 	_, running := activeQueues[deviceIP]
-	activeQueuesMu.Unlock()
 	if running {
 		return nil // already playing, nothing to do
 	}
@@ -186,8 +197,8 @@ func PlayQueue(deviceIP string) error {
 		return fmt.Errorf("no parked tracks to resume")
 	}
 
-	startQueue(deviceIP, tracks)
-	notifyQueueChange(deviceIP)
+	_startQueueLocked(deviceIP, tracks)
+	go notifyQueueChange(deviceIP)
 	return nil
 }
 
@@ -223,7 +234,7 @@ func RemoveFromQueue(deviceIP string, index int) error {
 	q.tracks = append(q.tracks[:1+index], q.tracks[2+index:]...)
 	q.mu.Unlock()
 
-	notifyQueueChange(deviceIP)
+	go notifyQueueChange(deviceIP)
 	return nil
 }
 
@@ -246,7 +257,7 @@ func ClearUpcoming(deviceIP string) {
 	delete(parkedTracks, deviceIP)
 	parkedMu.Unlock()
 
-	notifyQueueChange(deviceIP)
+	go notifyQueueChange(deviceIP)
 }
 
 // GetQueueSnapshot returns the current state for the UI.
@@ -283,6 +294,14 @@ func GetQueueSnapshot(deviceIP string) QueueSnapshot {
 // ── internal ──────────────────────────────────────────────────────────────────
 
 func startQueue(deviceIP string, tracks []QueueTrack) *Queue {
+	activeQueuesMu.Lock()
+	defer activeQueuesMu.Unlock()
+	return _startQueueLocked(deviceIP, tracks)
+}
+
+// _startQueueLocked expects activeQueuesMu to be held. It handles the queue initialization
+// and ensures old queues for this device exit gracefully.
+func _startQueueLocked(deviceIP string, tracks []QueueTrack) *Queue {
 	q := &Queue{
 		deviceIP:      deviceIP,
 		tracks:        append([]QueueTrack{}, tracks...),
@@ -292,12 +311,10 @@ func startQueue(deviceIP string, tracks []QueueTrack) *Queue {
 		sourceAccount: deezerAccountOrFallback(deviceIP),
 	}
 
-	activeQueuesMu.Lock()
 	if old, ok := activeQueues[deviceIP]; ok {
 		close(old.stop)
 	}
 	activeQueues[deviceIP] = q
-	activeQueuesMu.Unlock()
 
 	go q.run()
 	return q
