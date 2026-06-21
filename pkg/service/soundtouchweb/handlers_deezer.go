@@ -5,10 +5,8 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"strings"
 
-	"github.com/gorilla/websocket" // same package used by BroadcastDeviceList — adjust path if different
-	"github.com/gesellix/bose-soundtouch/pkg/models"
+	"github.com/gorilla/websocket"
 	bmxpkg "github.com/gesellix/bose-soundtouch/pkg/service/bmx"
 	"github.com/gesellix/bose-soundtouch/pkg/service/soundtouchweb/webtypes"
 	"github.com/go-chi/chi/v5"
@@ -36,75 +34,6 @@ func (app *WebApp) HandleDeezerSearch(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: rawItems})
-}
-
-// HandlePlayDeezer plays a Deezer track, album, or artist on a specific SoundTouch device.
-func (app *WebApp) HandlePlayDeezer(w http.ResponseWriter, r *http.Request) {
-	device, exists := app.GetDevice(chi.URLParam(r, "id"))
-	if !exists {
-		app.sendError(w, "Device not found", http.StatusNotFound)
-		return
-	}
-	defer r.Body.Close()
-
-	var req struct {
-		Location json.RawMessage `json:"location"`
-		Name     string          `json:"itemName"`
-		Type     string          `json:"type"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		app.sendError(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	var locationStr string
-	if len(req.Location) > 0 {
-		locationStr = string(req.Location)
-		if len(locationStr) > 1 && locationStr[0] == '"' && locationStr[len(locationStr)-1] == '"' {
-			locationStr = locationStr[1 : len(locationStr)-1]
-		}
-	}
-
-	if locationStr == "" {
-		app.sendError(w, "Location/ID is required", http.StatusBadRequest)
-		return
-	}
-
-	boseType := req.Type
-	if boseType == "" {
-		boseType = "album"
-	}
-	if boseType == "artist" {
-		boseType = "artistradio"
-	}
-
-	// Recupero dell'account con il vecchio metodo string-matching (Infallibile)
-	sourceAccount := app.extractDeezerAccount(device.DeviceInfo.IPAddress)
-
-	// Fallback post-spegnimento cloud Bose (Giugno 2026)
-	// Se la cassa restituisce un XML vuoto o privo di account, forziamo un ID fittizio
-	if sourceAccount == "" {
-		log.Printf("[Deezer] No native account found on %s. Applying post-cloud dummy identifier.", device.DeviceInfo.IPAddress)
-		sourceAccount = "12345678"
-	}
-
-	contentItem := &models.ContentItem{
-		Source:        "DEEZER",
-		Type:          boseType,
-		Location:      locationStr,
-		ItemName:      req.Name,
-		SourceAccount: sourceAccount,
-		IsPresetable:  true,
-	}
-
-	if err := device.Client.SelectContentItem(contentItem); err != nil {
-		app.sendError(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: map[string]string{"message": "Playing " + req.Name}})
 }
 
 // HandleDeezerQueueReplace replaces the current queue with the supplied
@@ -314,39 +243,8 @@ func (app *WebApp) HandleDeezerArtistDetails(w http.ResponseWriter, r *http.Requ
 	})
 }
 
-// HandleDeezerArtistAlbums returns the full album list for an artist (used
-// to populate the "Albums" section of the artist drill-down view).
-func (app *WebApp) HandleDeezerArtistAlbums(w http.ResponseWriter, r *http.Request) {
-	artistID := chi.URLParam(r, "artistId")
-	if artistID == "" {
-		app.sendError(w, "artistId parameter is required", http.StatusBadRequest)
-		return
-	}
-
-	albumsData, err := bmxpkg.DeezerArtistAlbums(artistID)
-	if err != nil {
-		app.sendError(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	var formattedAlbums []map[string]interface{}
-	for _, album := range albumsData.Data {
-		formattedAlbums = append(formattedAlbums, map[string]interface{}{
-			"id":           album.ID,
-			"title":        album.Title,
-			"cover_small":  album.CoverSmall,
-			"cover_medium": album.CoverMed,
-			"type":         "album",
-		})
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: formattedAlbums})
-}
-
-// HandleDeezerArtistTracklist returns an extended track list (up to ~100
-// tracks) for an artist — the dedicated "Tracklist" feature, since
-// HandleDeezerArtistDetails's top-tracks list is only ~25 tracks.
+// HandleDeezerArtistTracklist returns an extended track list (up to ~100 tracks)
+// for an artist. Used by the ▶ Top 50 play button.
 func (app *WebApp) HandleDeezerArtistTracklist(w http.ResponseWriter, r *http.Request) {
 	artistID := chi.URLParam(r, "artistId")
 	if artistID == "" {
@@ -367,42 +265,6 @@ func (app *WebApp) HandleDeezerArtistTracklist(w http.ResponseWriter, r *http.Re
 
 	var formattedTracks []map[string]interface{}
 	for _, track := range tracksData.Data {
-		formattedTracks = append(formattedTracks, map[string]interface{}{
-			"id":      track.ID,
-			"title":   track.Title,
-			"album": map[string]string{
-				"cover_small":  track.Album.CoverSmall,
-				"cover_medium": track.Album.CoverMed,
-			},
-			"type": "track",
-		})
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: formattedTracks})
-}
-
-// HandleDeezerArtistRadio returns the track list for an artist's radio.
-func (app *WebApp) HandleDeezerArtistRadio(w http.ResponseWriter, r *http.Request) {
-	artistID := chi.URLParam(r, "artistId")
-	if artistID == "" {
-		app.sendError(w, "artistId parameter is required", http.StatusBadRequest)
-		return
-	}
-
-	radioData, err := bmxpkg.DeezerArtistRadio(artistID)
-	if err != nil {
-		app.sendError(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	if len(radioData.Data) == 0 {
-		app.sendError(w, "No tracks found in this artist radio", http.StatusNotFound)
-		return
-	}
-
-	var formattedTracks []map[string]interface{}
-	for _, track := range radioData.Data {
 		formattedTracks = append(formattedTracks, map[string]interface{}{
 			"id":      track.ID,
 			"title":   track.Title,
@@ -466,14 +328,6 @@ func (app *WebApp) HandleDeezerAlbumTracks(w http.ResponseWriter, r *http.Reques
 	_ = json.NewEncoder(w).Encode(webtypes.APIResponse{Success: true, Data: formattedTracks})
 }
 
-// extractDeezerAccount reads the device's currently configured Deezer
-// source account. The actual XML probing lives in bmxpkg.DeezerSourceAccount
-// so the queue (deezer_queue.go) and this classic single-item play path
-// share one implementation instead of two copies drifting apart.
-func (app *WebApp) extractDeezerAccount(deviceIP string) string {
-	return bmxpkg.DeezerSourceAccount(deviceIP)
-}
-
 // SetupDeezerQueueBroadcaster registers the WebApp's WebSocket broadcast
 // function with the bmx queue package. Call this once at startup (from
 // MountWeb) so every queue state change is pushed to all connected clients
@@ -501,12 +355,4 @@ func (app *WebApp) SetupDeezerQueueBroadcaster() {
 			c.Close()
 		}
 	})
-}
-
-func deezerUnquote(raw json.RawMessage) string {
-	str := string(raw)
-	if strings.HasPrefix(str, `"`) && strings.HasSuffix(str, `"`) {
-		return str[1 : len(str)-1]
-	}
-	return str
 }

@@ -74,25 +74,12 @@ export const api = {
 
     // Deezer — browse (global, not device-scoped)
     deezerSearch: (q, type) => req(`/api/control/providers/deezer/search?q=${encodeURIComponent(q)}${type ? `&type=${encodeURIComponent(type)}` : ''}`),
-    deezerArtistDetails: (artistId) => req(`/api/control/providers/deezer/artist/${artistId}`),
-    deezerArtistAlbums: (artistId) => req(`/api/control/providers/deezer/artist/${artistId}/albums`),
+    deezerArtistDetails:   (artistId) => req(`/api/control/providers/deezer/artist/${artistId}`),
     deezerArtistTracklist: (artistId) => req(`/api/control/providers/deezer/artist/${artistId}/tracklist`),
-    deezerArtistRadio: (artistId) => req(`/api/control/providers/deezer/artist/${artistId}/radio`),
-    deezerArtistRelated: (artistId) => req(`/api/control/providers/deezer/artist/${artistId}/related`),
-    deezerAlbumTracks: (albumId) => req(`/api/control/providers/deezer/album/${albumId}/tracks`),
-
-    // Deezer — legacy native Bose-source playback (device-scoped). Kept for
-    // reference/back-compat; the queue-based browser UI no longer calls this,
-    // since native DEEZER source playback is unreliable since Bose's cloud
-    // shutdown (see handlers_deezer.go).
-    deezerPlay: (deviceId, item) => req(`/api/control/devices/${deviceId}/providers/deezer/play`, {
-        method: 'POST',
-        headers: JSON_HEADERS,
-        body: JSON.stringify(item),
-    }),
+    deezerArtistRelated:   (artistId) => req(`/api/control/providers/deezer/artist/${artistId}/related`),
+    deezerAlbumTracks:     (albumId)  => req(`/api/control/providers/deezer/album/${albumId}/tracks`),
 
     // Deezer — single queue per device.
-    // deezerQueueReplace: replaces the queue and starts playing immediately (▶).
     // deezerQueueAdd:     appends to the end; starts if nothing is playing (+).
     // deezerQueueStatus:  returns { current, upcoming, playing }.
     // deezerQueueRemove:  removes upcoming[index] (0 = first upcoming, not current).

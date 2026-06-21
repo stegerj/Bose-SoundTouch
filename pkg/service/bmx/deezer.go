@@ -141,11 +141,6 @@ func DeezerArtistTracklist(artistID string) (*DeezerTrackListResponse, error) {
 	return fetchTrackList(fmt.Sprintf("%s/artist/%s/top?limit=100", deezerBaseURL, artistID))
 }
 
-// DeezerArtistRadio retrieves the artist radio tracks.
-func DeezerArtistRadio(artistID string) (*DeezerTrackListResponse, error) {
-	return fetchTrackList(fmt.Sprintf("%s/artist/%s/radio", deezerBaseURL, artistID))
-}
-
 // DeezerAlbumTracks retrieves all tracks for an album.
 // limit=100 covers virtually all commercial albums without needing pagination.
 func DeezerAlbumTracks(albumID string) (*DeezerAlbumTracksResponse, error) {

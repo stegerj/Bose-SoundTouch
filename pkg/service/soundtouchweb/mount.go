@@ -103,7 +103,6 @@ func (app *WebApp) MountWeb(r chi.Router, discoveryService *discovery.UnifiedDis
 					r.Post("/tunein/play", app.HandlePlayTuneIn)
 					r.Post("/radiobrowser/play", app.HandlePlayRadioBrowser)
 					r.Post("/url/play", app.HandlePlayURL)
-					r.Post("/deezer/play", app.HandlePlayDeezer)
 					// Proxied to the AfterTouch service's /api/setup/tts/speak.
 					r.Post("/tts/play", app.HandleAPISpeakText)
 				})
@@ -124,9 +123,7 @@ func (app *WebApp) MountWeb(r chi.Router, discoveryService *discovery.UnifiedDis
 			r.Route("/deezer", func(r chi.Router) {
 				r.Get("/search", app.HandleDeezerSearch)
 				r.Get("/artist/{artistId}", app.HandleDeezerArtistDetails)
-				r.Get("/artist/{artistId}/albums", app.HandleDeezerArtistAlbums)
 				r.Get("/artist/{artistId}/tracklist", app.HandleDeezerArtistTracklist)
-				r.Get("/artist/{artistId}/radio", app.HandleDeezerArtistRadio)
 				r.Get("/artist/{artistId}/related", app.HandleDeezerArtistRelated)
 				r.Get("/album/{albumId}/tracks", app.HandleDeezerAlbumTracks)
 

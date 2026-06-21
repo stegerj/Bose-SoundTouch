@@ -14,13 +14,39 @@ const S = {
   expand:  { padding: '4px 8px',  background: '#333',    color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' },
 };
 
-function normTrack({ id, title, name, artist, subtitle, album, imageUrl, cover_url }) {
+// Normalises any track-like object into the canonical shape the queue and
+// render functions expect. id, title, artist, cover_url are all that matter.
+function normTrack({ id, title, name, artist, subtitle, imageUrl, cover_url }) {
   return {
     id:        Number(id),
     title:     title || name || 'Traccia sconosciuta',
     artist:    artist || subtitle || 'Artista sconosciuto',
-    album:     album  || '',
     cover_url: imageUrl || cover_url || '',
+  };
+}
+
+// Fetches top-5 tracks + full album list + related artists for an artist in
+// one round-trip pair (details + related fire in parallel). Extracted at module
+// level so toggleExpand and showArtistPage don't duplicate this logic.
+async function fetchArtistData(artist) {
+  const [detailsRes, relatedRes] = await Promise.all([
+    api.deezerArtistDetails(artist.id),
+    api.deezerArtistRelated(artist.id).catch(() => ({ data: [] })),
+  ]);
+  const data = detailsRes?.data || detailsRes || {};
+  return {
+    tracks: (Array.isArray(data.tracks) ? data.tracks : []).slice(0, 5).map(t =>
+      normTrack({ id: t.id, title: t.title, artist: artist.name,
+        imageUrl: t.album?.cover_medium || t.album?.cover_small || '' })),
+    albums: (Array.isArray(data.albums) ? data.albums : []).map(a => ({
+      id: a.id, name: a.title, subtitle: artist.name,
+      imageUrl: a.cover_medium || a.cover_small || '', type: 'album',
+    })),
+    related: (Array.isArray(relatedRes?.data) ? relatedRes.data : []).map(a => ({
+      id: a.id, name: a.name || '',
+      subtitle: a.nb_album != null ? `${a.nb_album} album` : 'Artista',
+      imageUrl: a.picture_medium || a.picture_small || '', type: 'artist',
+    })),
   };
 }
 
@@ -84,23 +110,7 @@ export function DeezerBrowser({ devices, deviceId }) {
     setExpanded({});
 
     try {
-      const [detailsRes, relatedRes] = await Promise.all([
-        api.deezerArtistDetails(artist.id),
-        api.deezerArtistRelated(artist.id).catch(() => ({ data: [] })),
-      ]);
-      const data  = detailsRes?.data || detailsRes || {};
-      const top5  = (Array.isArray(data.tracks) ? data.tracks : []).slice(0, 5).map(t =>
-        normTrack({ id: t.id, title: t.title, artist: artist.name,
-          imageUrl: t.album?.cover_medium || t.album?.cover_small || '' }));
-      const albums = (Array.isArray(data.albums) ? data.albums : []).map(a => ({
-        id: a.id, name: a.title, subtitle: artist.name,
-        imageUrl: a.cover_medium || a.cover_small || '', type: 'album',
-      }));
-      const related = (Array.isArray(relatedRes?.data) ? relatedRes.data : []).map(a => ({
-        id: a.id, name: a.name || '',
-        subtitle: a.nb_album != null ? `${a.nb_album} album` : 'Artista',
-        imageUrl: a.picture_medium || a.picture_small || '', type: 'artist',
-      }));
+      const { tracks: top5, albums, related } = await fetchArtistData(artist);
       setArtistPage({ artist, tracks: top5, albums, related, loading: false });
     } catch (err) {
       console.error(err);
@@ -137,23 +147,7 @@ export function DeezerBrowser({ devices, deviceId }) {
         const tracks = await fetchAlbumTracks(item);
         setExpanded(p => ({ ...p, [key]: { loading: false, tracks, albums: [], related: [] } }));
       } else if (type === 'artist') {
-        const [detailsRes, relatedRes] = await Promise.all([
-          api.deezerArtistDetails(item.id),
-          api.deezerArtistRelated(item.id).catch(() => ({ data: [] })),
-        ]);
-        const data  = detailsRes?.data || detailsRes || {};
-        const top5  = (Array.isArray(data.tracks) ? data.tracks : []).slice(0, 5).map(t =>
-          normTrack({ id: t.id, title: t.title, artist: item.name,
-            imageUrl: t.album?.cover_medium || t.album?.cover_small || '' }));
-        const albums = (Array.isArray(data.albums) ? data.albums : []).map(a => ({
-          id: a.id, name: a.title, subtitle: item.name,
-          imageUrl: a.cover_medium || a.cover_small || '', type: 'album',
-        }));
-        const related = (Array.isArray(relatedRes?.data) ? relatedRes.data : []).map(a => ({
-          id: a.id, name: a.name || '',
-          subtitle: a.nb_album != null ? `${a.nb_album} album` : 'Artista',
-          imageUrl: a.picture_medium || a.picture_small || '', type: 'artist',
-        }));
+        const { tracks: top5, albums, related } = await fetchArtistData(item);
         setExpanded(p => ({ ...p, [key]: { loading: false, tracks: top5, albums, related } }));
       }
     } catch (err) {
