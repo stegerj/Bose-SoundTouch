@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/bmx"
+	"github.com/stegerj/bose-soundtouch/pkg/service/bmx"
 	"github.com/go-chi/chi/v5"
 )
 

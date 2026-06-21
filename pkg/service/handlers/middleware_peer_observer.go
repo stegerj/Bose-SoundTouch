@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/setup"
+	"github.com/stegerj/bose-soundtouch/pkg/service/setup"
 )
 
 // PeerObserverMiddleware records every incoming request's source IP and

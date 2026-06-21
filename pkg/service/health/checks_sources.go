@@ -3,7 +3,7 @@ package health
 import (
 	"fmt"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/datastore"
+	"github.com/stegerj/bose-soundtouch/pkg/service/datastore"
 )
 
 // CheckSourcesXMLPresent is the built-in check for missing

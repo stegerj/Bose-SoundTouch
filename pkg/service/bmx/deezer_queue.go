@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gesellix/bose-soundtouch/pkg/client"
-	"github.com/gesellix/bose-soundtouch/pkg/models"
+	"github.com/stegerj/bose-soundtouch/pkg/client"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
 )
 
 // QueueTrack describes a single playable item, identified by its Deezer

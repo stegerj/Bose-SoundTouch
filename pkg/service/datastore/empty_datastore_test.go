@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/constants"
+	"github.com/stegerj/bose-soundtouch/pkg/service/constants"
 )
 
 // These tests cover #458: an unclean power-cut on the speaker's NAND can leave

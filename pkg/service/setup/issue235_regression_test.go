@@ -9,14 +9,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gesellix/bose-soundtouch/pkg/client"
-	"github.com/gesellix/bose-soundtouch/pkg/service/testing/fakespeaker"
+	"github.com/stegerj/bose-soundtouch/pkg/client"
+	"github.com/stegerj/bose-soundtouch/pkg/service/testing/fakespeaker"
 )
 
 // TestIssue235_SpotifyConnectNowPlayingReportsNotPresetable documents
 // the device-side signal behind issue #235:
 //
-//	https://github.com/gesellix/Bose-SoundTouch/issues/235
+//	https://github.com/stegerj/Bose-SoundTouch/issues/235
 //
 // When music is streamed to a SoundTouch via Spotify Connect (the
 // Spotify mobile/desktop app sends audio to the speaker, as opposed

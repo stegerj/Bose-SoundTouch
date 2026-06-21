@@ -10,7 +10,7 @@ import (
 
 	"strings"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/datastore"
+	"github.com/stegerj/bose-soundtouch/pkg/service/datastore"
 )
 
 func TestSyncPresets_PreservesID(t *testing.T) {

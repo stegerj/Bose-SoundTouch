@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/gesellix/bose-soundtouch/pkg/models"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
 )
 
 // TestSaveRecents_DeduplicatesByID is a regression test for the recents

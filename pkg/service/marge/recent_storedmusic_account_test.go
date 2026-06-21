@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/constants"
-	"github.com/gesellix/bose-soundtouch/pkg/service/datastore"
+	"github.com/stegerj/bose-soundtouch/pkg/service/constants"
+	"github.com/stegerj/bose-soundtouch/pkg/service/datastore"
 )
 
 // TestRecent_StoredMusicKeepsAccount is a regression test for the recents-replay

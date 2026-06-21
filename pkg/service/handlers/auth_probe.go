@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gesellix/bose-soundtouch/pkg/client"
+	"github.com/stegerj/bose-soundtouch/pkg/client"
 )
 
 const (

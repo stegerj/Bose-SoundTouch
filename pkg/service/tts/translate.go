@@ -3,7 +3,7 @@ package tts
 import (
 	"context"
 
-	"github.com/gesellix/bose-soundtouch/pkg/models"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
 )
 
 // ProviderTranslate is the identifier for the Google Translate provider.

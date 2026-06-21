@@ -3,7 +3,7 @@ package handlers
 import (
 	"fmt"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/health"
+	"github.com/stegerj/bose-soundtouch/pkg/service/health"
 )
 
 // restoreAndInjectCAFix is the FixFunc registered for

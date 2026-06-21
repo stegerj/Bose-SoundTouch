@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/health"
-	"github.com/gesellix/bose-soundtouch/pkg/service/setup"
+	"github.com/stegerj/bose-soundtouch/pkg/service/health"
+	"github.com/stegerj/bose-soundtouch/pkg/service/setup"
 	"github.com/go-chi/chi/v5"
 )
 

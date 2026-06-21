@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gesellix/bose-soundtouch/pkg/discovery"
-	"github.com/gesellix/bose-soundtouch/pkg/models"
+	"github.com/stegerj/bose-soundtouch/pkg/discovery"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
 )
 
 // SpeakerSetupAP is the IP address a SoundTouch speaker assigns itself

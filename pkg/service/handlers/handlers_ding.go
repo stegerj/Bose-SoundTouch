@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/ding"
+	"github.com/stegerj/bose-soundtouch/pkg/service/ding"
 )
 
 // dingDefaultCache holds the rendered bytes for the default

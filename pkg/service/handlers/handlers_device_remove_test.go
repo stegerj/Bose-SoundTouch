@@ -3,8 +3,8 @@ package handlers
 import (
 	"testing"
 
-	"github.com/gesellix/bose-soundtouch/pkg/models"
-	"github.com/gesellix/bose-soundtouch/pkg/service/datastore"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
+	"github.com/stegerj/bose-soundtouch/pkg/service/datastore"
 )
 
 // TestRemoveDeviceByID verifies the extracted removal helper deletes the

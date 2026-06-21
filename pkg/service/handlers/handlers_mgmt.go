@@ -11,10 +11,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/gesellix/bose-soundtouch/pkg/client"
-	"github.com/gesellix/bose-soundtouch/pkg/models"
-	"github.com/gesellix/bose-soundtouch/pkg/service/constants"
-	"github.com/gesellix/bose-soundtouch/pkg/service/marge"
+	"github.com/stegerj/bose-soundtouch/pkg/client"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
+	"github.com/stegerj/bose-soundtouch/pkg/service/constants"
+	"github.com/stegerj/bose-soundtouch/pkg/service/marge"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )

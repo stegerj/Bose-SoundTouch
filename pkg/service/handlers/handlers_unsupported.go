@@ -8,7 +8,7 @@ import (
 
 // unsupportedReportURL is where we ask operators to report a real client that
 // depends on an endpoint we treat as unused.
-const unsupportedReportURL = "https://github.com/gesellix/Bose-SoundTouch/issues"
+const unsupportedReportURL = "https://github.com/stegerj/Bose-SoundTouch/issues"
 
 // maxUnsupportedBodyLog caps how much of an unexpected request body we log.
 const maxUnsupportedBodyLog = 2048

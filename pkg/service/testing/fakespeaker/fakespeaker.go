@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gesellix/bose-soundtouch/pkg/models"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
 )
 
 //go:embed testdata/info.xml testdata/presets.xml testdata/recents.xml testdata/networkinfo.xml testdata/sources.xml testdata/supportedurls.xml testdata/now_playing.xml

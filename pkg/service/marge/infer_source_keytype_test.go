@@ -3,7 +3,7 @@ package marge
 import (
 	"testing"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/constants"
+	"github.com/stegerj/bose-soundtouch/pkg/service/constants"
 )
 
 // TestInferSourceKeyTypeFromLocation pins the diagnostic URL-pattern

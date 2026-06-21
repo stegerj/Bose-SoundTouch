@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/constants"
+	"github.com/stegerj/bose-soundtouch/pkg/service/constants"
 )
 
 func TestDataStore_MacAddressMapping(t *testing.T) {

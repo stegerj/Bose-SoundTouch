@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/gesellix/bose-soundtouch/pkg/models"
-	"github.com/gesellix/bose-soundtouch/pkg/service/constants"
-	"github.com/gesellix/bose-soundtouch/pkg/service/datastore"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
+	"github.com/stegerj/bose-soundtouch/pkg/service/constants"
+	"github.com/stegerj/bose-soundtouch/pkg/service/datastore"
 )
 
 // configuredFromSpeakerSources mirrors the HTTP /sources import branch of

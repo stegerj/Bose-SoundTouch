@@ -8,8 +8,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/gesellix/bose-soundtouch/pkg/models"
-	"github.com/gesellix/bose-soundtouch/pkg/service/datastore"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
+	"github.com/stegerj/bose-soundtouch/pkg/service/datastore"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -330,7 +330,7 @@ func TestHandleMgmtAccountDetails_Sources(t *testing.T) {
 				Account string `xml:"account,attr"`
 			}{
 				Type:    "Audio",
-				Account: "gesellix",
+				Account: "stegerj",
 			},
 		},
 	}
@@ -383,27 +383,27 @@ func TestHandleMgmtAccountDetails_Sources(t *testing.T) {
 		t.Fatalf("Expected at least 2 sources, got %d", len(response.Devices[0].Sources))
 	}
 
-	// Find the gesellix source
-	var gesellixSource *models.FullResponseSource
+	// Find the stegerj source
+	var stegerjSource *models.FullResponseSource
 	for i := range response.Devices[0].Sources {
 		if response.Devices[0].Sources[i].ID == "10863533" {
-			gesellixSource = &response.Devices[0].Sources[i]
+			stegerjSource = &response.Devices[0].Sources[i]
 			break
 		}
 	}
 
-	if gesellixSource == nil {
-		t.Fatal("gesellix source not found")
+	if stegerjSource == nil {
+		t.Fatal("stegerj source not found")
 	} else {
-		// It should have fallen back to Account name "gesellix" because DisplayName was generic "Audio"
-		if gesellixSource.DisplayName != "gesellix" {
-			t.Errorf("Expected display_name 'gesellix', got '%s'", gesellixSource.DisplayName)
+		// It should have fallen back to Account name "stegerj" because DisplayName was generic "Audio"
+		if stegerjSource.DisplayName != "stegerj" {
+			t.Errorf("Expected display_name 'stegerj', got '%s'", stegerjSource.DisplayName)
 		}
-		if gesellixSource.Name != "gesellix" {
-			t.Errorf("Expected name 'gesellix', got '%s'", gesellixSource.Name)
+		if stegerjSource.Name != "stegerj" {
+			t.Errorf("Expected name 'stegerj', got '%s'", stegerjSource.Name)
 		}
-		if gesellixSource.Type != "Audio" {
-			t.Errorf("Expected type 'Audio', got '%s'", gesellixSource.Type)
+		if stegerjSource.Type != "Audio" {
+			t.Errorf("Expected type 'Audio', got '%s'", stegerjSource.Type)
 		}
 	}
 

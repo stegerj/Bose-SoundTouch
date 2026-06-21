@@ -13,10 +13,10 @@ import (
 
 	"fmt"
 
-	"github.com/gesellix/bose-soundtouch/pkg/discovery"
-	"github.com/gesellix/bose-soundtouch/pkg/models"
-	"github.com/gesellix/bose-soundtouch/pkg/service/datastore"
-	"github.com/gesellix/bose-soundtouch/pkg/service/setup"
+	"github.com/stegerj/bose-soundtouch/pkg/discovery"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
+	"github.com/stegerj/bose-soundtouch/pkg/service/datastore"
+	"github.com/stegerj/bose-soundtouch/pkg/service/setup"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -1273,7 +1273,7 @@ func (s *Server) HandleGetVersionInfo(w http.ResponseWriter, _ *http.Request) {
 		commitURL = fmt.Sprintf("%s/commit/%s", repoURL, commit)
 	}
 
-	// Release version: should point to the release, e.g. https://github.com/gesellix/Bose-SoundTouch/releases/tag/v0.58.0
+	// Release version: should point to the release, e.g. https://github.com/stegerj/Bose-SoundTouch/releases/tag/v0.58.0
 	// "dirty" versions don't get a release link (only the commit).
 	if version != "" && version != "dev" && version != "(devel)" && !strings.Contains(version, "dirty") {
 		releaseURL = fmt.Sprintf("%s/releases/tag/%s", repoURL, version)

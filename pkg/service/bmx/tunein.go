@@ -10,7 +10,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/gesellix/bose-soundtouch/pkg/models"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
 )
 
 // TuneIn endpoint constants. The base URLs themselves are configurable vars

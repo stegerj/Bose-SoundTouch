@@ -10,14 +10,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gesellix/bose-soundtouch/pkg/models"
-	"github.com/gesellix/bose-soundtouch/pkg/service/datastore"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
+	"github.com/stegerj/bose-soundtouch/pkg/service/datastore"
 )
 
 // TestIssue285_RenamePutAcceptedAndPersisted reproduces the rename
 // loop documented in issue #285:
 //
-//	https://github.com/gesellix/Bose-SoundTouch/issues/285
+//	https://github.com/stegerj/Bose-SoundTouch/issues/285
 //
 // When a user renames an ST10 via the Bose App or via
 // `soundtouch-cli name set`, the speaker fires PUT

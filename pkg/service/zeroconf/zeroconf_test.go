@@ -476,7 +476,7 @@ func TestPushCredentials_AddUserNoOp(t *testing.T) {
 	defer srv.Close()
 
 	host, port := srvHostPort(srv)
-	err = PushCredentials(host, port, "gesellix", "fresh-access-token")
+	err = PushCredentials(host, port, "stegerj", "fresh-access-token")
 	if !errors.Is(err, ErrAddUserNoOp) {
 		t.Fatalf("PushCredentials: got %v, want ErrAddUserNoOp", err)
 	}
@@ -499,7 +499,7 @@ func TestPushCredentials_AddUserNoOpInSimplifiedPath(t *testing.T) {
 	defer srv.Close()
 
 	host, port := srvHostPort(srv)
-	err := PushCredentials(host, port, "gesellix", "raw-access-token")
+	err := PushCredentials(host, port, "stegerj", "raw-access-token")
 	if !errors.Is(err, ErrAddUserNoOp) {
 		t.Fatalf("PushCredentials (simplified path): got %v, want ErrAddUserNoOp", err)
 	}
@@ -547,7 +547,7 @@ func TestPushCredentials_AddUserRealError_NotMisclassified(t *testing.T) {
 			defer srv.Close()
 
 			host, port := srvHostPort(srv)
-			err := PushCredentials(host, port, "gesellix", "fresh-access-token")
+			err := PushCredentials(host, port, "stegerj", "fresh-access-token")
 			if err == nil {
 				t.Fatalf("expected error, got nil")
 			}

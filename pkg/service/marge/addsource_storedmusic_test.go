@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/constants"
-	"github.com/gesellix/bose-soundtouch/pkg/service/datastore"
+	"github.com/stegerj/bose-soundtouch/pkg/service/constants"
+	"github.com/stegerj/bose-soundtouch/pkg/service/datastore"
 )
 
 // TestAddSource_MultipleStoredMusicServersCoexist is a regression test for the

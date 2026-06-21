@@ -1,6 +1,6 @@
 package amazon
 
-import "github.com/gesellix/bose-soundtouch/pkg/service/zeroconf"
+import "github.com/stegerj/bose-soundtouch/pkg/service/zeroconf"
 
 // ErrAddUserNoOp re-exports zeroconf.ErrAddUserNoOp for callers that don't
 // want a direct dependency on the zeroconf package.

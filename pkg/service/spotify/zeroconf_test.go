@@ -9,7 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/zeroconf"
+	"github.com/stegerj/bose-soundtouch/pkg/service/zeroconf"
 )
 
 // TestPushSpotifyCredentials_FullRoundTrip starts a mock "speaker" ZeroConf server,

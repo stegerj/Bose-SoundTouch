@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/certmanager"
-	"github.com/gesellix/bose-soundtouch/pkg/service/datastore"
+	"github.com/stegerj/bose-soundtouch/pkg/service/certmanager"
+	"github.com/stegerj/bose-soundtouch/pkg/service/datastore"
 )
 
 type mockSSH struct {

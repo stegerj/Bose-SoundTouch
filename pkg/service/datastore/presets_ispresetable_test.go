@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gesellix/bose-soundtouch/pkg/models"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
 )
 
 // TestSavePresets_PreservesIsPresetable is a regression test for GH-235:

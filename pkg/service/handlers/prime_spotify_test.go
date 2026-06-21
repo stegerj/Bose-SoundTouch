@@ -14,11 +14,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gesellix/bose-soundtouch/pkg/models"
-	"github.com/gesellix/bose-soundtouch/pkg/service/constants"
-	"github.com/gesellix/bose-soundtouch/pkg/service/datastore"
-	"github.com/gesellix/bose-soundtouch/pkg/service/setup"
-	"github.com/gesellix/bose-soundtouch/pkg/service/spotify"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
+	"github.com/stegerj/bose-soundtouch/pkg/service/constants"
+	"github.com/stegerj/bose-soundtouch/pkg/service/datastore"
+	"github.com/stegerj/bose-soundtouch/pkg/service/setup"
+	"github.com/stegerj/bose-soundtouch/pkg/service/spotify"
 )
 
 // TestPrimeDeviceWithSpotify_RegistersMargeSource is a regression test for the

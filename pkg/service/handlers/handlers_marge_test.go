@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gesellix/bose-soundtouch/pkg/models"
-	"github.com/gesellix/bose-soundtouch/pkg/service/datastore"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
+	"github.com/stegerj/bose-soundtouch/pkg/service/datastore"
 )
 
 func TestMargeCreateAccount(t *testing.T) {
@@ -355,7 +355,7 @@ func TestMargeAccountFullExcludesEmptyAmazonSource(t *testing.T) {
 			<sourceKey type="RADIO_BROWSER" account=""/>
 		</source>
 		<source id="SRC_1776706409" type="Audio" createdOn="2026-04-20T17:33:29.483+00:00" updatedOn="2026-04-20T17:33:29.483+00:00" displayName="" secret="bs-6c58d056c2d35df85f57ad2334b0cdc4" secretType="token_version_3" sourceproviderid="15">
-			<sourceKey type="SPOTIFY" account="gesellix"/>
+			<sourceKey type="SPOTIFY" account="stegerj"/>
 		</source>
 	</sources>`
 	if err := os.WriteFile(filepath.Join(lastDir, "Sources.xml"), []byte(lastSourcesXML), 0644); err != nil {

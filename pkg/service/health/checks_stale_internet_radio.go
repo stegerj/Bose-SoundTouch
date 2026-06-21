@@ -3,8 +3,8 @@ package health
 import (
 	"fmt"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/constants"
-	"github.com/gesellix/bose-soundtouch/pkg/service/datastore"
+	"github.com/stegerj/bose-soundtouch/pkg/service/constants"
+	"github.com/stegerj/bose-soundtouch/pkg/service/datastore"
 )
 
 // CheckIDStaleInternetRadio is the registry id of the stale INTERNET_RADIO

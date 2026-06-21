@@ -300,7 +300,7 @@ const (
 	SourcesFile    = "Sources.xml"
 
 	// Speaker-protocol constants (HTTP port, paths, on-device file
-	// locations) moved to github.com/gesellix/bose-soundtouch/pkg/speaker
+	// locations) moved to github.com/stegerj/bose-soundtouch/pkg/speaker
 	// so the client library and CLI can share them without depending on
 	// the service package.
 

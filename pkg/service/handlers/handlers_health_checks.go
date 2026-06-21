@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/health"
+	"github.com/stegerj/bose-soundtouch/pkg/service/health"
 )
 
 // healthChecksResponse is the wire shape for GET /setup/health.

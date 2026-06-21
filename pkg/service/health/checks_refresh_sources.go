@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/datastore"
+	"github.com/stegerj/bose-soundtouch/pkg/service/datastore"
 )
 
 // CheckIDRefreshSources is the registry id of the per-device

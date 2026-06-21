@@ -1,6 +1,6 @@
 package spotify
 
-import "github.com/gesellix/bose-soundtouch/pkg/service/zeroconf"
+import "github.com/stegerj/bose-soundtouch/pkg/service/zeroconf"
 
 // ErrAddUserNoOp re-exports zeroconf.ErrAddUserNoOp so callers in the spotify
 // package don't need a direct dependency on the zeroconf package to recognise

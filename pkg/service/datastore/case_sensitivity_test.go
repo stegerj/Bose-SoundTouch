@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/constants"
+	"github.com/stegerj/bose-soundtouch/pkg/service/constants"
 )
 
 func TestMacAddressCaseSensitivity(t *testing.T) {

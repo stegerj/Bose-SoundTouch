@@ -3,7 +3,7 @@ package handlers
 import (
 	"sync"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/setup"
+	"github.com/stegerj/bose-soundtouch/pkg/service/setup"
 )
 
 // peerObserver is the rendezvous between the passive reachability probe

@@ -3,7 +3,7 @@ package marge
 import (
 	"testing"
 
-	"github.com/gesellix/bose-soundtouch/pkg/models"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
 )
 
 // TestUpdateOrCreateRecent_MoveToFrontPreservesList is a regression test for the
@@ -18,14 +18,14 @@ import (
 func TestUpdateOrCreateRecent_MoveToFrontPreservesList(t *testing.T) {
 	spotify := &models.ConfiguredSource{}
 	spotify.SourceKeyType = "SPOTIFY"
-	spotify.SourceKeyAccount = "gesellix"
+	spotify.SourceKeyAccount = "stegerj"
 
 	mk := func(id, name, loc string) models.ServiceRecent {
 		var r models.ServiceRecent
 		r.ID = id
 		r.Name = name
 		r.Source = "SPOTIFY"
-		r.SourceAccount = "gesellix"
+		r.SourceAccount = "stegerj"
 		r.Location = loc
 
 		return r

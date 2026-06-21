@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/logbuf"
+	"github.com/stegerj/bose-soundtouch/pkg/service/logbuf"
 )
 
 // logsResponse is the wire shape for GET /setup/logs. Entries is

@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"github.com/gesellix/bose-soundtouch/pkg/service/datastore"
+	"github.com/stegerj/bose-soundtouch/pkg/service/datastore"
 	"github.com/go-chi/chi/v5"
 )
 

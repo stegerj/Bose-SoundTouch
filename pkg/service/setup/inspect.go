@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/gesellix/bose-soundtouch/pkg/models"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
 )
 
 // InspectOptions controls how Manager.Inspect probes the speaker.

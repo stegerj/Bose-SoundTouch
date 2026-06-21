@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gesellix/bose-soundtouch/pkg/models"
-	"github.com/gesellix/bose-soundtouch/pkg/service/bmx"
-	"github.com/gesellix/bose-soundtouch/pkg/service/constants"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
+	"github.com/stegerj/bose-soundtouch/pkg/service/bmx"
+	"github.com/stegerj/bose-soundtouch/pkg/service/constants"
 )
 
 // Provider identifies the radio station source backend.

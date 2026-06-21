@@ -8,9 +8,9 @@ import (
 
 	"strconv"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/amazon"
-	"github.com/gesellix/bose-soundtouch/pkg/service/constants"
-	"github.com/gesellix/bose-soundtouch/pkg/service/spotify"
+	"github.com/stegerj/bose-soundtouch/pkg/service/amazon"
+	"github.com/stegerj/bose-soundtouch/pkg/service/constants"
+	"github.com/stegerj/bose-soundtouch/pkg/service/spotify"
 	"github.com/go-chi/chi/v5"
 )
 

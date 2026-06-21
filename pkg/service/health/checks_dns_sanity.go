@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gesellix/bose-soundtouch/pkg/discovery"
+	"github.com/stegerj/bose-soundtouch/pkg/discovery"
 	"github.com/miekg/dns"
 )
 

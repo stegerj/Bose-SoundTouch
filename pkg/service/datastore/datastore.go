@@ -21,8 +21,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gesellix/bose-soundtouch/pkg/models"
-	"github.com/gesellix/bose-soundtouch/pkg/service/constants"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
+	"github.com/stegerj/bose-soundtouch/pkg/service/constants"
 )
 
 // ErrGroupNotFound is returned when no group is found for a given device.

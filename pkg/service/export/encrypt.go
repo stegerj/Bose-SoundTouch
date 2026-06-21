@@ -16,7 +16,7 @@ import (
 // scripts/setup-diagnostic-key.sh. To verify it matches the maintainer's
 // GitHub SSH keys:
 //
-//	curl -s https://github.com/gesellix.keys | grep "$(awk '{print $2}' keys/public/diagnostic.pub)"
+//	curl -s https://github.com/stegerj.keys | grep "$(awk '{print $2}' keys/public/diagnostic.pub)"
 //
 //go:embed diagnostic.pub
 var diagnosticPublicKeyRaw string

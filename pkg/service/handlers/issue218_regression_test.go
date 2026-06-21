@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gesellix/bose-soundtouch/pkg/models"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
 )
 
 // TestIssue218_OrionStationResolvesPresetStreamURL closes the loop on

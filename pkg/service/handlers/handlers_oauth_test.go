@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/amazon"
-	"github.com/gesellix/bose-soundtouch/pkg/service/datastore"
-	"github.com/gesellix/bose-soundtouch/pkg/service/spotify"
+	"github.com/stegerj/bose-soundtouch/pkg/service/amazon"
+	"github.com/stegerj/bose-soundtouch/pkg/service/datastore"
+	"github.com/stegerj/bose-soundtouch/pkg/service/spotify"
 	"github.com/go-chi/chi/v5"
 )
 

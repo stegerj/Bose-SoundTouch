@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/datastore"
+	"github.com/stegerj/bose-soundtouch/pkg/service/datastore"
 )
 
 // FixIDAddMargeHostToTLS is the QuickFix that re-probes the speaker

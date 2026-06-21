@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gesellix/bose-soundtouch/pkg/client"
-	"github.com/gesellix/bose-soundtouch/pkg/service/tts"
+	"github.com/stegerj/bose-soundtouch/pkg/client"
+	"github.com/stegerj/bose-soundtouch/pkg/service/tts"
 	"github.com/go-chi/chi/v5"
 )
 

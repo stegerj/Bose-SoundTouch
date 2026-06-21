@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/health"
+	"github.com/stegerj/bose-soundtouch/pkg/service/health"
 	"github.com/go-chi/chi/v5"
 )
 

@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gesellix/bose-soundtouch/pkg/discovery"
-	"github.com/gesellix/bose-soundtouch/pkg/models"
-	"github.com/gesellix/bose-soundtouch/pkg/service/constants"
+	"github.com/stegerj/bose-soundtouch/pkg/discovery"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
+	"github.com/stegerj/bose-soundtouch/pkg/service/constants"
 )
 
 func TestUPnPDiscoveryToDatastoreMapping_FullFlow(t *testing.T) {

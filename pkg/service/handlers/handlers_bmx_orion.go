@@ -10,8 +10,8 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/bmx"
-	"github.com/gesellix/bose-soundtouch/pkg/service/datastore"
+	"github.com/stegerj/bose-soundtouch/pkg/service/bmx"
+	"github.com/stegerj/bose-soundtouch/pkg/service/datastore"
 )
 
 // HandleOrionToken returns an anonymous Orion access token.

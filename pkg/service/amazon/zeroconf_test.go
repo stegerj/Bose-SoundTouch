@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/zeroconf"
+	"github.com/stegerj/bose-soundtouch/pkg/service/zeroconf"
 )
 
 func TestPushAmazonCredentials_FullRoundTrip(t *testing.T) {

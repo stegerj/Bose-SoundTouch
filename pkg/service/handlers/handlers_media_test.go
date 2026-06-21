@@ -75,7 +75,7 @@ func TestRootEndpointJSON(t *testing.T) {
 	for _, want := range []struct{ key, value string }{
 		{"Bose", "AfterTouch"},
 		{"service", "Go/Chi"},
-		{"docs", "https://gesellix.github.io/Bose-SoundTouch/"},
+		{"docs", "https://stegerj.github.io/Bose-SoundTouch/"},
 	} {
 		if got[want.key] != want.value {
 			t.Errorf("payload[%q] = %q, want %q", want.key, got[want.key], want.value)

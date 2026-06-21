@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/datastore"
+	"github.com/stegerj/bose-soundtouch/pkg/service/datastore"
 )
 
 // TestReclassifyCanonicalSourceIDs_GH343 reproduces the situation from

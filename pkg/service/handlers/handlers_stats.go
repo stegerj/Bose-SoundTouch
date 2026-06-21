@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gesellix/bose-soundtouch/pkg/models"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
 	"github.com/go-chi/chi/v5"
 )
 

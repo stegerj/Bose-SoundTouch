@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/datastore"
+	"github.com/stegerj/bose-soundtouch/pkg/service/datastore"
 )
 
 // TestAccountFullToXML_RecentWithPoisonedSourceProviderID is a regression test

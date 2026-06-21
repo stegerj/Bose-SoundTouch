@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/gesellix/bose-soundtouch/pkg/models"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
 )
 
 func TestIsSafeIdentifier(t *testing.T) {

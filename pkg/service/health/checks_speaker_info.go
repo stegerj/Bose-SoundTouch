@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/datastore"
+	"github.com/stegerj/bose-soundtouch/pkg/service/datastore"
 )
 
 // suggestAccountForPairing picks an account ID to pre-fill into the

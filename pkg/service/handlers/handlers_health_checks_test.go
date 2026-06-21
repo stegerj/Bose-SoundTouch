@@ -8,9 +8,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/gesellix/bose-soundtouch/pkg/models"
-	"github.com/gesellix/bose-soundtouch/pkg/service/datastore"
-	"github.com/gesellix/bose-soundtouch/pkg/service/health"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
+	"github.com/stegerj/bose-soundtouch/pkg/service/datastore"
+	"github.com/stegerj/bose-soundtouch/pkg/service/health"
 	"github.com/go-chi/chi/v5"
 )
 

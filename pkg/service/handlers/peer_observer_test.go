@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/setup"
+	"github.com/stegerj/bose-soundtouch/pkg/service/setup"
 )
 
 func TestPeerObserver_RegisterSignalForget(t *testing.T) {

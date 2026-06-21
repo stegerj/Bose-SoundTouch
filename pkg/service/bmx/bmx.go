@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/gesellix/bose-soundtouch/pkg/models"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
 )
 
 // BuildOrionLocation wraps a raw stream URL in the AfterTouch Orion station

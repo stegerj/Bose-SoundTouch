@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/datastore"
-	"github.com/gesellix/bose-soundtouch/pkg/service/proxy"
+	"github.com/stegerj/bose-soundtouch/pkg/service/datastore"
+	"github.com/stegerj/bose-soundtouch/pkg/service/proxy"
 	"github.com/go-chi/chi/v5"
 )
 

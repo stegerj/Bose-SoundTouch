@@ -99,7 +99,7 @@ func (s *Server) HandleRoot(w http.ResponseWriter, r *http.Request) {
 		payload := map[string]string{
 			"Bose":    "AfterTouch",
 			"service": "Go/Chi",
-			"docs":    "https://gesellix.github.io/Bose-SoundTouch/",
+			"docs":    "https://stegerj.github.io/Bose-SoundTouch/",
 		}
 
 		for k, v := range buildVersionInfo() {

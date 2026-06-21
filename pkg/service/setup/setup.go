@@ -16,15 +16,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gesellix/bose-soundtouch/pkg/client"
-	"github.com/gesellix/bose-soundtouch/pkg/models"
+	"github.com/stegerj/bose-soundtouch/pkg/client"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/certmanager"
-	"github.com/gesellix/bose-soundtouch/pkg/service/constants"
-	"github.com/gesellix/bose-soundtouch/pkg/service/datastore"
-	"github.com/gesellix/bose-soundtouch/pkg/service/marge"
-	"github.com/gesellix/bose-soundtouch/pkg/ssh"
-	"github.com/gesellix/bose-soundtouch/pkg/telnet"
+	"github.com/stegerj/bose-soundtouch/pkg/service/certmanager"
+	"github.com/stegerj/bose-soundtouch/pkg/service/constants"
+	"github.com/stegerj/bose-soundtouch/pkg/service/datastore"
+	"github.com/stegerj/bose-soundtouch/pkg/service/marge"
+	"github.com/stegerj/bose-soundtouch/pkg/ssh"
+	"github.com/stegerj/bose-soundtouch/pkg/telnet"
 )
 
 // MigrationMethod represents the method used to migrate a speaker.
@@ -130,7 +130,7 @@ type SSHClient interface {
 }
 
 // TelnetClient defines the interface for the device's port-17000 diagnostic
-// shell. The concrete implementation lives in github.com/gesellix/bose-soundtouch/pkg/telnet;
+// shell. The concrete implementation lives in github.com/stegerj/bose-soundtouch/pkg/telnet;
 // the interface exists so tests can substitute a mock.
 type TelnetClient interface {
 	Dial() error

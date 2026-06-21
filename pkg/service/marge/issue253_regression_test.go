@@ -6,13 +6,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/datastore"
+	"github.com/stegerj/bose-soundtouch/pkg/service/datastore"
 )
 
 // TestIssue253_PresetsXMLEditPropagatesToMargeResponse documents the
 // service-side half of issue #253:
 //
-//	https://github.com/gesellix/Bose-SoundTouch/issues/253
+//	https://github.com/stegerj/Bose-SoundTouch/issues/253
 //
 // The reporter edits AfterTouch's persisted Presets.xml on disk and
 // expects the change to show up on the speaker's :8090/presets. That

@@ -8,14 +8,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/datastore"
-	"github.com/gesellix/bose-soundtouch/pkg/service/testing/fakespeaker"
+	"github.com/stegerj/bose-soundtouch/pkg/service/datastore"
+	"github.com/stegerj/bose-soundtouch/pkg/service/testing/fakespeaker"
 )
 
 // TestIssue234_FactoryResetSpeakerSyncsReducedSources captures the
 // device-side state reported in
 //
-//	https://github.com/gesellix/Bose-SoundTouch/issues/234
+//	https://github.com/stegerj/Bose-SoundTouch/issues/234
 //
 // After a factory reset the SoundTouch's `/sources` only lists the
 // always-on local sources (AUX, BLUETOOTH, AIRPLAY, NOTIFICATION,

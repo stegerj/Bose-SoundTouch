@@ -8,15 +8,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gesellix/bose-soundtouch/pkg/service/datastore"
-	"github.com/gesellix/bose-soundtouch/pkg/service/testing/fakespeaker"
+	"github.com/stegerj/bose-soundtouch/pkg/service/datastore"
+	"github.com/stegerj/bose-soundtouch/pkg/service/testing/fakespeaker"
 )
 
 // TestIssue218_LocalInternetRadioPresetSurvivesSync drives a syncPresets
 // against a fakespeaker that emits the exact LOCAL_INTERNET_RADIO preset
 // XML pasted by the reporter in issue #218:
 //
-//	https://github.com/gesellix/Bose-SoundTouch/issues/218
+//	https://github.com/stegerj/Bose-SoundTouch/issues/218
 //
 // The preset's contentItem location points at
 // `https://content.api.bose.io/core02/svc-bmx-adapter-orion/prod/orion/station?data=...`

@@ -18,12 +18,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gesellix/bose-soundtouch/pkg/models"
-	"github.com/gesellix/bose-soundtouch/pkg/service/export"
-	"github.com/gesellix/bose-soundtouch/pkg/service/health"
-	"github.com/gesellix/bose-soundtouch/pkg/service/setup"
-	speakerssh "github.com/gesellix/bose-soundtouch/pkg/ssh"
-	"github.com/gesellix/bose-soundtouch/pkg/telnet"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
+	"github.com/stegerj/bose-soundtouch/pkg/service/export"
+	"github.com/stegerj/bose-soundtouch/pkg/service/health"
+	"github.com/stegerj/bose-soundtouch/pkg/service/setup"
+	speakerssh "github.com/stegerj/bose-soundtouch/pkg/ssh"
+	"github.com/stegerj/bose-soundtouch/pkg/telnet"
 )
 
 // diagnosticReport is the structured summary included as diagnostic.json
