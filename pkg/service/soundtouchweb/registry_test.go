@@ -8,8 +8,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/gesellix/bose-soundtouch/pkg/models"
-	"github.com/gesellix/bose-soundtouch/pkg/service/soundtouchweb/webtypes"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
+	"github.com/stegerj/bose-soundtouch/pkg/service/soundtouchweb/webtypes"
 )
 
 func newRegistryDevice(name string) *webtypes.DeviceConnection {

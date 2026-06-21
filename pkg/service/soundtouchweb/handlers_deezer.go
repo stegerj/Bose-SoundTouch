@@ -10,8 +10,8 @@ import (
 	"sync"
 
 	"github.com/gorilla/websocket"
-	bmxpkg "github.com/gesellix/bose-soundtouch/pkg/service/bmx"
-	"github.com/gesellix/bose-soundtouch/pkg/service/soundtouchweb/webtypes"
+	bmxpkg "github.com/stegerj/bose-soundtouch/pkg/service/bmx"
+	"github.com/stegerj/bose-soundtouch/pkg/service/soundtouchweb/webtypes"
 	"github.com/go-chi/chi/v5"
 )
 

@@ -6,10 +6,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gesellix/bose-soundtouch/pkg/client"
-	"github.com/gesellix/bose-soundtouch/pkg/config"
-	"github.com/gesellix/bose-soundtouch/pkg/discovery"
-	"github.com/gesellix/bose-soundtouch/pkg/service/soundtouchweb/webtypes"
+	"github.com/stegerj/bose-soundtouch/pkg/client"
+	"github.com/stegerj/bose-soundtouch/pkg/config"
+	"github.com/stegerj/bose-soundtouch/pkg/discovery"
+	"github.com/stegerj/bose-soundtouch/pkg/service/soundtouchweb/webtypes"
 )
 
 // NewDiscoveryService loads config and returns a unified discovery service

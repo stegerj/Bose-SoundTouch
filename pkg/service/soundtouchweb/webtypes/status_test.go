@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/gesellix/bose-soundtouch/pkg/models"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
 )
 
 func TestNewDeviceConnection_InitialStatus(t *testing.T) {

@@ -13,10 +13,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gesellix/bose-soundtouch/pkg/models"
-	bmxpkg "github.com/gesellix/bose-soundtouch/pkg/service/bmx"
-	"github.com/gesellix/bose-soundtouch/pkg/service/soundtouchweb/webtypes"
-	"github.com/gesellix/bose-soundtouch/pkg/service/stations"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
+	bmxpkg "github.com/stegerj/bose-soundtouch/pkg/service/bmx"
+	"github.com/stegerj/bose-soundtouch/pkg/service/soundtouchweb/webtypes"
+	"github.com/stegerj/bose-soundtouch/pkg/service/stations"
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/websocket"
 )
