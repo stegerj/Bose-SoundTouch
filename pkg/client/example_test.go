@@ -5,8 +5,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/gesellix/bose-soundtouch/pkg/client"
-	"github.com/gesellix/bose-soundtouch/pkg/models"
+	"github.com/stegerj/bose-soundtouch/pkg/client"
+	"github.com/stegerj/bose-soundtouch/pkg/models"
 )
 
 // Example demonstrates basic device control operations.
