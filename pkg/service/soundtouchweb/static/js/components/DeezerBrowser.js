@@ -198,13 +198,9 @@ export function DeezerBrowser({ devices, deviceId }) {
     let tracks  = [];
 
     if (type === 'track') {
-      if (action === 'play') {
-        const all = sectionTracks.filter(t => t && (t.type === 'track' || !t.type));
-        const idx = all.findIndex(t => String(t.id) === String(item.id));
-        tracks = (idx >= 0 ? all.slice(idx) : [item]).map(t => normTrack(t));
-      } else {
-        tracks = [normTrack(item)];
-      }
+      // Track level: play (or queue) only the clicked track, never the rest
+      // of its surrounding album/section.
+      tracks = [normTrack(item)];
     } else if (type === 'album') {
       setLoading(true);
       try   { tracks = await fetchAlbumTracks(item); }
