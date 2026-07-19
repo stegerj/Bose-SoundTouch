@@ -162,6 +162,11 @@ type Client struct {
 	httpClient *http.Client
 	timeout    time.Duration
 	userAgent  string
+
+	// avTransportURLOverride, when set, replaces the UPnP AVTransport control
+	// URL that is otherwise derived from baseURL (host + speaker.UPnPPort). Used
+	// only by tests to point the SOAP requests at an httptest server.
+	avTransportURLOverride string
 }
 
 // Config holds configuration for the SoundTouch client
@@ -1338,7 +1343,13 @@ func (c *Client) AddToZone(deviceID, ipAddress string) error {
 	return c.SetZone(zoneRequest)
 }
 
-// RemoveFromZone removes a device from the current zone
+// RemoveFromZone removes a device from the current zone.
+//
+// It uses the dedicated /removeZoneSlave endpoint rather than rebuilding the
+// zone with /setZone and the remaining members: /setZone does not drop a member
+// from a multi-member zone (the speaker only goes standalone when the resulting
+// member set is empty), so a setZone rebuild silently fails to remove one of
+// several members. See #511.
 func (c *Client) RemoveFromZone(deviceID string) error {
 	// Get current zone configuration
 	currentZone, err := c.GetZone()
@@ -1346,11 +1357,21 @@ func (c *Client) RemoveFromZone(deviceID string) error {
 		return fmt.Errorf("failed to get current zone: %w", err)
 	}
 
-	// Convert to zone request and remove member
-	zoneRequest := currentZone.ToZoneRequest()
-	zoneRequest.RemoveMember(deviceID)
+	if currentZone.IsStandalone() {
+		return nil // nothing to remove
+	}
 
-	return c.SetZone(zoneRequest)
+	// Carry the member's IP (as the speaker expects) when we know it.
+	slaveIP := ""
+
+	for i := range currentZone.Members {
+		if currentZone.Members[i].DeviceID == deviceID {
+			slaveIP = currentZone.Members[i].IP
+			break
+		}
+	}
+
+	return c.RemoveZoneSlave(currentZone.Master, deviceID, slaveIP)
 }
 
 // DissolveZone dissolves the current zone, making all devices standalone

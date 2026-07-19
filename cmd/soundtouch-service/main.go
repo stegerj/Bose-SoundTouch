@@ -50,7 +50,11 @@ func updateBuildInfo() {
 			repoURL = "https://" + info.Main.Path
 		}
 
-		if info.Main.Version != "" && info.Main.Version != "(devel)" {
+		// Only fall back to build info when the version was not injected via
+		// -ldflags (i.e. still the "dev" default, e.g. `go install …@vX.Y.Z`).
+		// This keeps an explicitly stamped release version from being clobbered
+		// by a VCS pseudo-version (e.g. v0.0.0-… from a shallow checkout).
+		if version == "dev" && info.Main.Version != "" && info.Main.Version != "(devel)" {
 			version = info.Main.Version
 		}
 
@@ -477,10 +481,25 @@ func main() {
 			config := loadConfig(c)
 			ds := initDataStore(config.dataDir)
 
+			// Detect a genuinely fresh data dir by the ABSENCE of settings.json,
+			// not by an empty server_url. A hand-authored settings.json (e.g. one
+			// that only sets trust_forwarded_headers and leaves server_url to the
+			// --server-url flag) exists but has no server_url; keying the "first
+			// run" default-write off server_url would treat it as fresh and
+			// clobber the operator's file, dropping fields createDefaultSettings
+			// doesn't know about.
+			settingsExisted := settingsFileExists(config.dataDir)
+
 			persisted := applyPersistedSettings(ds, &config)
 
-			if persisted.ServerURL == "" {
+			if !settingsExisted {
 				log.Printf("Creating default settings.json in %s", sanitizeLog(config.dataDir))
+				log.Printf("Data directory %s looks empty (first run). If you did NOT expect this "+
+					"(e.g. after recreating a Docker container), your previous settings, datastore and "+
+					"CA were not persisted; mount a persistent volume at the data dir (Docker: "+
+					"-v <volume>:/app/data) so device state and the CA survive restarts. A lost CA "+
+					"forces re-migrating speakers and re-trusting the new CA.",
+					sanitizeLog(config.dataDir))
 				persisted = createDefaultSettings(ds, config)
 			}
 
@@ -499,7 +518,8 @@ func main() {
 			server := handlers.NewServer(ds, sm, config.serverURL, config.redact, config.logBody, config.record)
 			sm.GetDNSRunning = server.GetDNSRunning
 			server.SetLogBuffer(logBuf)
-			server.SetHTTPServerURL(config.httpsServerURL)
+			server.SetHTTPSListenAddr(config.httpsAddr)
+			server.SetHTTPSSettings(config.httpsOverride, config.httpsPort, config.httpsDefaultURL)
 			server.SetExpectedHosts(config.domains)
 			server.SetVersionInfo(version, commit, date, repoURL)
 			server.SetDiscoverySettings(config.discoveryInterval, config.discoveryEnabled)
@@ -663,7 +683,10 @@ type serviceConfig struct {
 	dataDir             string
 	hostname            string
 	serverURL           string
-	httpsServerURL      string
+	httpsServerURL      string // effective (derived or overridden)
+	httpsOverride       string // explicit override; "" = derive from serverURL
+	httpsPort           string
+	httpsDefaultURL     string // hostname-based fallback
 	httpsAddr           string
 	redact              bool
 	logBody             bool
@@ -736,10 +759,13 @@ func loadConfig(c *cli.Context) serviceConfig {
 		httpsAddr = ":" + httpsPort
 	}
 
-	httpsServerURL := c.String("https-server-url")
-	if httpsServerURL == "" {
-		httpsServerURL = "https://" + hostname + ":" + httpsPort
-	}
+	// The HTTPS URL is an override (from the flag/env); when empty it is
+	// derived from serverURL + https port so one setting (Target Domain)
+	// drives both. httpsDefaultURL is the hostname-based fallback used
+	// before a Target Domain is configured.
+	httpsOverride := c.String("https-server-url")
+	httpsDefaultURL := "https://" + hostname + ":" + httpsPort
+	httpsServerURL := handlers.DeriveHTTPSURL(serverURL, httpsOverride, httpsPort, httpsDefaultURL)
 
 	tlsExtraHosts := c.StringSlice("tls-extra-host")
 	domains := getDomains(serverURL, httpsServerURL, hostname, tlsExtraHosts)
@@ -797,6 +823,9 @@ func loadConfig(c *cli.Context) serviceConfig {
 		hostname:            hostname,
 		serverURL:           serverURL,
 		httpsServerURL:      httpsServerURL,
+		httpsOverride:       httpsOverride,
+		httpsPort:           httpsPort,
+		httpsDefaultURL:     httpsDefaultURL,
 		httpsAddr:           httpsAddr,
 		redact:              redact,
 		logBody:             logBody,
@@ -903,6 +932,20 @@ func getDomains(serverURL, httpsServerURL, hostname string, extraHosts []string)
 	return domains
 }
 
+// settingsFileExists reports whether a settings.json is already present in the
+// data dir. It's the first-run discriminator: an existing file (even an
+// incomplete, hand-authored one) must never be overwritten by the default
+// seed, while a truly empty data dir gets defaults plus the lost-volume notice.
+func settingsFileExists(dataDir string) bool {
+	if dataDir == "" {
+		return false
+	}
+
+	_, err := os.Stat(filepath.Join(dataDir, "settings.json"))
+
+	return err == nil
+}
+
 func applyPersistedSettings(ds *datastore.DataStore, config *serviceConfig) datastore.Settings {
 	persisted, err := ds.GetSettings()
 	if err != nil {
@@ -920,9 +963,19 @@ func applyPersistedSettings(ds *datastore.DataStore, config *serviceConfig) data
 		config.serverURL = handlers.NormalizeServerURL(persisted.ServerURL)
 	}
 
-	if persisted.HTTPServerURL != "" {
-		config.httpsServerURL = persisted.HTTPServerURL
+	// persisted.HTTPServerURL is the HTTPS override (empty = derive).
+	// Existing installs carry their old effective value here; if it is
+	// exactly what we would derive anyway, treat it as "derive" so those
+	// installs don't show a spurious override in the UI. A genuinely custom
+	// value is kept as an override. Recompute either way, since serverURL
+	// may have come from the persisted settings above.
+	config.httpsOverride = persisted.HTTPServerURL
+	if config.httpsOverride != "" &&
+		config.httpsOverride == handlers.DeriveHTTPSURL(config.serverURL, "", config.httpsPort, config.httpsDefaultURL) {
+		config.httpsOverride = ""
 	}
+
+	config.httpsServerURL = handlers.DeriveHTTPSURL(config.serverURL, config.httpsOverride, config.httpsPort, config.httpsDefaultURL)
 
 	config.discoveryEnabled = persisted.DiscoveryEnabled
 	if persisted.DiscoveryInterval != "" {
@@ -1042,7 +1095,7 @@ func applyPersistedMusicServiceCredentials(config *serviceConfig, persisted data
 func createDefaultSettings(ds *datastore.DataStore, config serviceConfig) datastore.Settings {
 	settings := datastore.Settings{
 		ServerURL:          config.serverURL,
-		HTTPServerURL:      config.httpsServerURL,
+		HTTPServerURL:      config.httpsOverride,
 		RedactLogs:         config.redact,
 		LogBodies:          config.logBody,
 		RecordInteractions: config.record,
@@ -1222,14 +1275,12 @@ func setupRouter(server *handlers.Server, stockholmHandler *stockholm.Handler, w
 	// every downstream middleware and the recorder see the cleaned path.
 	r.Use(middleware.CleanPath)
 
-	// TrustedRealIP must run before any handler that reads r.RemoteAddr —
+	// ClientIPMiddleware must run before any handler that reads the client IP —
 	// SnapshotMiddleware captures the request, and several handlers
-	// (HandleMargePowerOn, etc.) inspect the source IP. The middleware is
-	// gated on Settings.TrustForwardedHeaders; when off (the safe default),
-	// it returns nil and we skip Use'ing it entirely.
-	if mw := server.TrustedRealIPMiddleware(); mw != nil {
-		r.Use(mw)
-	}
+	// (HandleMargePowerOn, etc.) inspect the source IP via middleware.GetClientIP.
+	// Always wired: at minimum the socket peer is recorded; when
+	// TrustForwardedHeaders is on and the peer is trusted, XFF is resolved.
+	r.Use(server.ClientIPMiddleware())
 
 	r.Use(server.SnapshotMiddleware)
 	r.Use(server.OriginMiddleware)

@@ -48,6 +48,10 @@ Then, run the following command to install AfterTouch on the device.
 rw && curl -sSL https://raw.githubusercontent.com/gesellix/Bose-SoundTouch/main/scripts/on-device-install/install.sh | sh
 ```
 
+This installs the **latest release** by default (the script resolves it from
+GitHub's `releases/latest` redirect). To pin a specific version, see
+[Updating AfterTouch](#updating-aftertouch) below.
+
 After the installation check if you can access AfterTouch from your local device by navigating to `http://<IP_ADDRESS_OF_SPEAKER>:8000`. If you can access the AfterTouch UI, you're good to go!
 
 ### If `http://<IP_ADDRESS_OF_SPEAKER>:8000` fails: SSH port forwarding
@@ -91,17 +95,21 @@ Run the installer again with the version you want to install. The script backs u
 
 ```bash
 # 1. Environment variable (works when piping into sh)
-VERSION=0.107.0 rw && curl -sSL https://raw.githubusercontent.com/gesellix/Bose-SoundTouch/main/scripts/on-device-install/install.sh | sh
+VERSION=0.111.3 rw && curl -sSL https://raw.githubusercontent.com/gesellix/Bose-SoundTouch/main/scripts/on-device-install/install.sh | sh
 
 # 2. Command-line flag (pass args after `sh -s --`)
-rw && curl -sSL https://raw.githubusercontent.com/gesellix/Bose-SoundTouch/main/scripts/on-device-install/install.sh | sh -s -- --version 0.107.0
+rw && curl -sSL https://raw.githubusercontent.com/gesellix/Bose-SoundTouch/main/scripts/on-device-install/install.sh | sh -s -- --version 0.111.3
 
 # 3. Download first, then run with a flag
 curl -sSLo install.sh https://raw.githubusercontent.com/gesellix/Bose-SoundTouch/main/scripts/on-device-install/install.sh
-sh install.sh --version 0.107.0
+sh install.sh --version 0.111.3
 ```
 
-Running **without** a version override installs the version hard-coded in the script (the latest release at the time the script was published). That default is updated with each release; if you're running from `main`, it reflects the most recent tagged version.
+Running **without** a version override installs the latest release: the script
+follows GitHub's `https://github.com/gesellix/Bose-SoundTouch/releases/latest`
+redirect to discover the newest tag. If that lookup fails (offline, or a `curl`
+build without `-w` support), it falls back to a pinned version baked into the
+script.
 
 > **Tip — rollback:** if the new binary misbehaves, the installer left a `.backup` file alongside it:
 > ```bash

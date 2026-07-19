@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"net"
 	"net/http"
 	"time"
 
@@ -13,16 +12,15 @@ import (
 // the handler runs, so passive reachability probes can register a device
 // IP and learn whether any inbound landed in their wait window.
 //
-// Placement: after TrustedRealIPMiddleware (so r.RemoteAddr reflects the
-// trusted client IP) and after Recoverer (so any panic inside this
+// Placement: after ClientIPMiddleware (so the resolved client IP is available
+// via middleware.GetClientIP) and after Recoverer (so any panic inside this
 // middleware is contained). Before any short-circuiting middleware
 // would be unnecessary — Signal runs before next.ServeHTTP, so the
 // observation lands regardless of how later middleware handles the
 // request.
 func (s *Server) PeerObserverMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		host, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err == nil && host != "" {
+		if host := clientHost(r); host != "" {
 			s.peerObserver.Signal(host, setup.PeerHit{Path: r.URL.Path, At: time.Now()})
 		}
 

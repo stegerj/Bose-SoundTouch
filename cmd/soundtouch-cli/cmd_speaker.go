@@ -136,6 +136,40 @@ func playURL(c *cli.Context) error {
 	return nil
 }
 
+// playURLUPnP plays audio from a URL via the speaker's UPnP AVTransport service.
+// Unlike `speaker url` (the /speaker play_info path), it needs no app-key and no
+// DNS interception, so it works on a plain LAN. It switches the speaker to the
+// UPNP source and replaces the current playback (no duck-and-resume), and the
+// speaker itself must be able to reach the URL.
+func playURLUPnP(c *cli.Context) error {
+	clientConfig := GetClientConfig(c)
+	urlStr := c.String("url")
+
+	if urlStr == "" {
+		PrintError("URL is required")
+		return fmt.Errorf("URL cannot be empty")
+	}
+
+	PrintDeviceHeader(fmt.Sprintf("Playing URL via UPnP: %s", urlStr), clientConfig.Host, clientConfig.Port)
+
+	client, err := CreateSoundTouchClient(clientConfig)
+	if err != nil {
+		PrintError(fmt.Sprintf("Failed to create client: %v", err))
+		return err
+	}
+
+	if err := client.PlayURLViaUPnP(urlStr); err != nil {
+		PrintError(fmt.Sprintf("Failed to play URL via UPnP: %v", err))
+		return err
+	}
+
+	fmt.Printf("✅ URL playback started via UPnP\n")
+	fmt.Printf("   URL: %s\n", urlStr)
+	fmt.Printf("   Note: replaces the current source (UPNP); no app-key or DNS needed\n")
+
+	return nil
+}
+
 // playNotification plays a notification sound or a local file on the speaker
 func playNotification(c *cli.Context) error {
 	clientConfig := GetClientConfig(c)
@@ -192,6 +226,11 @@ func showSpeakerHelp(_ *cli.Context) error {
 	fmt.Println("• URL Content Playback:")
 	fmt.Println("  Play audio files from HTTP/HTTPS URLs")
 	fmt.Println("  Example: soundtouch-cli speaker url --url \"https://example.com/audio.mp3\" --app-key YOUR_KEY")
+	fmt.Println()
+	fmt.Println("• URL via UPnP/AVTransport (no app key, no DNS):")
+	fmt.Println("  Play an http:// audio URL directly via the speaker's UPnP renderer.")
+	fmt.Println("  Replaces the current source; http:// only (https is rejected).")
+	fmt.Println("  Example: soundtouch-cli speaker url-upnp --url \"http://192.0.2.10/audio.mp3\"")
 	fmt.Println()
 	fmt.Println("• Notification Beep:")
 	fmt.Println("  Play a simple notification sound")

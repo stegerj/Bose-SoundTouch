@@ -154,6 +154,46 @@ logread -f | grep -v '127.0.0.1:'
 
 > **Note on the firmware-internal placeholder sources.** The `<sourceItem source="SPOTIFY" sourceAccount="SpotifyConnectUserName" ...>`, `SpotifyAlexaUserName`, `UPNP/UPnPUserName`, `STORED_MUSIC_MEDIA_RENDERER/StoredMusicUserName`, and `QPLAY/QPlay{1,2}UserName` entries that appear in `/sources` even on a broken or unpaired speaker are *firmware-synthesized*. They show up regardless of AfterTouch's source list — their `status="UNAVAILABLE"` does not indicate an AfterTouch problem. Use the three checks above to diagnose the actual cause.
 
+### ❌ On-device install fails with `curl: (60) ... certificate is not yet valid`
+
+**Symptoms:**
+
+- Running the on-device installer over SSH (`curl -sSL .../install.sh | sh`)
+  fails immediately, before anything is downloaded:
+
+  ```
+  curl: (60) SSL certificate problem: certificate is not yet valid
+  ```
+
+- The same error appears for *any* HTTPS fetch from the speaker (GitHub,
+  `raw.githubusercontent.com`, …).
+
+**Cause:**
+
+The speaker's clock is set in the past. SoundTouch speakers have no
+battery-backed clock and rely on NTP, which is no longer reliable after the Bose
+cloud shutdown, so the clock can fall back to a date years ago. TLS validation
+then rejects the (recently issued) server certificate as "not yet valid" — its
+validity period starts *after* the speaker's notion of "now". This is the same
+stuck-clock condition behind several TuneIn / TLS failures (see issue #345).
+
+**Fix:**
+
+Set the speaker's clock to roughly the current time over SSH, then re-run the
+installer:
+
+```bash
+# On the speaker, over SSH. Replace with the current UTC date/time —
+# it only needs to be close enough to fall inside the certificate's validity
+# window, not exact.
+date -u -s "2026-06-27 12:00:00"
+```
+
+Then re-run the on-device install one-liner. Once AfterTouch is installed and
+running, its **`speaker_clock` health check** (with a `set_clock` quick-fix)
+keeps the speaker's clock corrected, so this is a one-time hurdle to get the
+installer through.
+
 ### ❌ Speaker logs `Curl 7, http 0` and AfterTouch sees no HTTP requests
 
 **Symptoms:**
@@ -299,6 +339,38 @@ dig soundtouch.local
 sudo apt-get install avahi-utils
 avahi-resolve -n soundtouch.local
 ```
+
+---
+
+### ⚠️ Health tab: "HTTPS endpoint TLS configuration" warns about the wrong port / not reachable {#https-endpoint-tls-config}
+
+**Symptoms:**
+
+- The Health tab's **HTTPS endpoint TLS configuration** check shows a warning like
+  *"Configured HTTPS URL … uses port 443, but the service is listening on port 8443"*,
+  or *"Configured HTTPS endpoint … isn't reachable from inside the service."*
+- You run AfterTouch on non-default ports (for example HTTP `8080`, HTTPS `8443`).
+
+**Cause:**
+
+AfterTouch advertises an HTTPS URL (used for the DNS-based redirect, Spotify/Amazon
+login, and certificate trust) separately from the HTTP one. If that URL's port
+doesn't match the port the HTTPS listener is actually bound to, the check dials the
+wrong place. This most often happened when the HTTPS URL had been set without a port
+(so it defaulted to `443`) while the listener was on `8443`.
+
+**Fix:**
+
+- Open **Settings → Service URLs**. The **HTTPS URL** line shows the effective value.
+  By default it now *derives* from the Target Domain (same host, on the HTTPS port),
+  so simply saving a correct Target Domain fixes it. Expand the ⓘ next to **HTTPS URL**
+  to set an **override** only if a reverse proxy serves HTTPS on a different host/port.
+- Equivalent CLI/env: set `--https-server-url` / `HTTPS_SERVER_URL` to include the
+  right port, e.g. `https://<host>:8443`, then restart.
+
+**Not always a problem:** if a reverse proxy intentionally terminates TLS on one port
+(e.g. `443`) and forwards to AfterTouch on another (e.g. `8443`), the warning is
+expected and can be ignored — the check can't see your proxy from inside the service.
 
 ---
 
@@ -464,6 +536,46 @@ Once the source plays once, it gets persisted to `/mnt/nv/BoseApp-Persistence/1/
 **For speakers without SSH:**
 
 If `soundtouch-cli source content --source TUNEIN ...` returns `1005` on a reset device that has never had TuneIn, the speaker is refusing because the source isn't registered yet — chicken-and-egg. The SoundTouch app is then the only practical path to register it; we can't write `Sources.xml` directly over telnet on most models.
+
+### ❌ Radio sources never activate after an in-place migration {#radio-sources-after-migration}
+
+**Symptoms:**
+
+- The speaker was migrated **in place** (not factory-reset first) and is reachable; account-bound sources (for example a music-streaming login) work and presets for them play.
+- **Every** radio-type source fails: selecting any `LOCAL_INTERNET_RADIO`, `TUNEIN`, or `RADIO_BROWSER` content returns `1005`, including the Health tab's "Play ding" test.
+- `curl http://<speaker-ip>:8090/sources` lists no radio source types at all.
+- The Health check warns that the speaker is "missing N source type(s) the service advertises".
+- The entries are present on disk in **both** the service-side `Sources.xml` **and** the speaker's own `/mnt/nv/BoseApp-Persistence/1/Sources.xml`, yet a reboot and a `sourcesUpdated` notification do not make them activate.
+
+**Cause:**
+
+After some in-place migrations the speaker's **runtime** `bmxRegistryUrl` (and often `statsServerUrl`) are still pointing at the dead Bose cloud (`content.api.bose.io` / `events.api.bosecm.com`), even though the persisted config and `Sources.xml` look correct. Radio sources (TUNEIN, RADIO_BROWSER, LOCAL_INTERNET_RADIO, …) are published through the **BMX registry**, so while `bmxRegistryUrl` points at the dead cloud the speaker can't fetch them and they never mount. On some models a full reboot reconciles all four service URLs from the stored config; on others it does not. (If you hit this, an encrypted diagnostic report taken **before** you reset the speaker is very helpful, and now includes the speaker's on-device `Sources.xml`. See the "Getting More Help" section below.)
+
+**Workaround (preferred — non-destructive):**
+
+Re-run the migration with the **telnet** method, which writes all four service URLs directly onto the speaker's runtime. No factory reset, no DNS, no SSH:
+
+```bash
+soundtouch-cli --host <speaker-ip> setup migrate --method telnet --service-url http://<aftertouch-host>:8000
+```
+
+Then reboot the speaker (or use "Refresh sources"). Afterwards the Migration tab's cross-check should show `bmxRegistryUrl` / `statsServerUrl` on AfterTouch, and the radio sources activate.
+
+Notes:
+
+- This needs the speaker's telnet diagnostic port (`17000`) to be reachable. Most SoundTouch models expose it; some hardened firmware builds do not, in which case use the factory-reset fallback below.
+- It writes AfterTouch's address (`http://<aftertouch-host>:8000`) **straight onto the speaker**, so there is no `bose:8000` hostname for the speaker to resolve. That is why pointing the service at `http://bose:8000` and adding a `bose` entry to your server's `/etc/hosts` does **not** help: the speaker is a separate device and never reads that file. If you prefer to redirect in the network instead of writing on the device, enable AfterTouch's built-in DNS (Settings) and have the speaker use AfterTouch as its resolver — see the FRITZ!Box + AdGuard guide.
+- Get `soundtouch-cli` from the [Downloads page](../downloads/_index.md) if you don't already have it.
+
+**Workaround (fallback — factory reset):**
+
+If the telnet method isn't available for your model, factory reset the speaker, then re-migrate it:
+
+1. Factory reset (on most models: hold `1` + `−` for ~10 seconds).
+2. Reconnect the speaker to your network.
+3. Re-migrate it in AfterTouch.
+
+After this the radio sources activate normally. Note the factory reset rewrites the speaker's `Sources.xml` to defaults, so any **account-bound** source (for example a music-streaming login) has to be re-added afterwards; your presets for it come back once the source is present again.
 
 ## 🔊 **Volume & Audio Issues**
 

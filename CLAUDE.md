@@ -43,7 +43,7 @@ Per-session pickup notes live in two local files at the repo root (they are `.gi
 make build          # All binaries
 make build-cli      # Just CLI
 make build-service  # Just service
-make build-web      # Just web UI
+make build-player   # Just web player
 make build-all      # Cross-platform builds (Linux, macOS, Windows)
 make install        # Install to $GOPATH/bin
 
@@ -98,6 +98,34 @@ make test-http-client          # fresh run on a clean slate
 The rotate target is non-destructive (it moves, never deletes) and
 opt-in (no other target invokes it). Old archives stay around for
 retrospective diffing whenever something goes sideways.
+
+## Decrypting diagnostic reports
+
+Reporters attach an encrypted diagnostic archive
+(`aftertouch-diagnostic-*.age`), usually saved under `_/i_<reporter>/`.
+Decrypt it with **this repo's own tool**, not the generic `age` CLI:
+
+```bash
+go run scripts/decrypt-diagnostic.go <file.age> | tar xz -C <dir containing the .age>
+```
+
+- The tool is `scripts/decrypt-diagnostic.go`; the private key lives at
+  `keys/private/diagnostic` (provisioned by `scripts/setup-diagnostic-key.sh`,
+  and never committed). It writes the decrypted `.tar.gz` to stdout.
+- Always decrypt/unpack next to the `.age` (not a scratch/tmp dir), into a
+  **per-file subfolder** so nothing collides: e.g.
+  `mkdir -p <dir>/extracted-<timestamp> && go run scripts/decrypt-diagnostic.go <dir>/<file>.age | tar xz -C <dir>/extracted-<timestamp>`.
+  This matters when a reporter folder holds multiple `.age` snapshots or
+  already has other files: every archive uses the same inner names
+  (`diagnostic.json`, `datastore/`, `http/`, ...), so extracting two into the
+  same dir overwrites and mixes them.
+- The archive contains `diagnostic.json` (health/device summary), `datastore/`
+  (raw speaker XML: DeviceInfo/Presets/Recents/Sources), `http/` (service
+  `full.xml`, `sourceproviders.xml`, captured speaker responses), `logs/`,
+  `settings.json`, `env.txt`, `system/`, `ssh/`. See
+  `docs/content/docs/appendix/DIAGNOSTIC-EXPORT.md`.
+- Reporter data stays under `_/` and is never committed (see "What never goes
+  into this repo").
 
 ## Project structure
 

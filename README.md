@@ -13,7 +13,7 @@
 
 Bose shut down SoundTouch cloud services on **May 6, 2026**. Presets, music service browsing, and stereo pairing no longer work through Bose's infrastructure. AfterTouch restores all of these — no Bose infrastructure required.
 
-See the [Survival Guide](https://gesellix.github.io/Bose-SoundTouch/docs/guides/SURVIVAL-GUIDE/) for the full picture.
+See the [Survival Guide](https://gesellix.github.io/Bose-SoundTouch/docs/guides/SURVIVAL-GUIDE/) for the full picture, or jump straight to [Downloads](https://gesellix.github.io/Bose-SoundTouch/docs/downloads/) to get the tools.
 
 [![AfterTouch docs homepage](media/docs-homepage.png)](https://gesellix.github.io/Bose-SoundTouch/)
 
@@ -66,13 +66,13 @@ See the [soundtouch-backup README](cmd/soundtouch-backup/README.md) for usage.
 
 Command-line control of any SoundTouch device: play/pause/volume, presets, source selection, multiroom zones, device discovery, and more. Works entirely over the local network — no cloud dependency. Well-suited for scripting and home automation.
 
-See the [CLI Reference](https://gesellix.github.io/Bose-SoundTouch/docs/guides/CLI-REFERENCE/) for full usage.
+See the [CLI Reference](https://gesellix.github.io/Bose-SoundTouch/docs/guides/CLI-REFERENCE/) for full usage, and the [Downloads page](https://gesellix.github.io/Bose-SoundTouch/docs/downloads/) to get the `soundtouch-cli` build for your OS.
 
 ---
 
 ### soundtouch-player
 
-> Formerly `soundtouch-web`. The `soundtouch-web` binary, Docker image, and install script are still published as a transitional alias and will be removed in a future release; please switch to `soundtouch-player`.
+> Formerly `soundtouch-web`. The `soundtouch-web` binary, Docker image, and install script are no longer published; please use `soundtouch-player`. (If you still run the binary under its old name, it prints a rename notice and works as before.)
 
 A standalone, LAN-resident web UI for device control — play, pause, volume, preset selection, real-time status — served from a local Go binary. Because it reaches speakers directly on your network and can delegate cloud-only features (e.g. TTS) to a remote AfterTouch service via `--service-url`, it stays useful when `soundtouch-service` runs off-LAN (for example in the cloud), where the embedded `/app` player cannot reach your speakers.
 

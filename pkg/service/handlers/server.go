@@ -40,7 +40,11 @@ type Server struct {
 	sm                       *setup.Manager
 	mu                       sync.RWMutex
 	serverURL                string
-	httpsServerURL           string
+	httpsServerURL           string // effective (derived or overridden) HTTPS URL
+	httpsOverride            string // explicit HTTPS URL override; "" means derive from serverURL
+	httpsPort                string // configured HTTPS port, used when deriving
+	httpsDefaultURL          string // startup hostname-based fallback when serverURL has no host
+	httpsListenAddr          string
 	discovering              bool
 	redactLogs               bool
 	logBodies                bool
@@ -149,6 +153,7 @@ func NewServer(ds *datastore.DataStore, sm *setup.Manager, serverURL string, red
 			_, httpsURL := s.GetSettings()
 			return httpsURL
 		},
+		s.actualHTTPSPort,
 		s.loadOwnCACert,
 	)
 	health.RegisterCACertExpiryCheck(s.healthRegistry, s.loadOwnCACert, s.ownCACertPath)
@@ -485,33 +490,26 @@ func (s *Server) loadOwnCACert() *x509.Certificate {
 	return s.ownCACache.cert
 }
 
-// TrustedRealIPMiddleware returns a chi middleware that rewrites
-// r.RemoteAddr from X-Real-IP / X-Forwarded-For / True-Client-IP, but only
-// when the immediate TCP peer is in the configured trusted-proxy list.
-// Returns nil when Settings.TrustForwardedHeaders is false (the safe
-// default), so the caller can skip wiring the middleware entirely.
+// ClientIPMiddleware returns a chi middleware that resolves the client IP into
+// the request context (read via middleware.GetClientIP). Always returns a
+// non-nil middleware: at minimum, the socket peer is recorded.
+//
+// When Settings.TrustForwardedHeaders is true and the immediate TCP peer is in
+// the configured trusted-proxy list, the X-Forwarded-For header is also
+// consulted: chi walks the chain right-to-left, skipping entries that fall
+// within the trusted CIDRs, and stores the first untrusted entry as the client.
 //
 // The trusted-peer gate prevents the typical X-Forwarded-* spoofing surface:
 // on a flat LAN where a malicious speaker could send the headers itself, we
 // won't honour them; behind a documented reverse proxy on loopback we will.
-func (s *Server) TrustedRealIPMiddleware() func(http.Handler) http.Handler {
+func (s *Server) ClientIPMiddleware() func(http.Handler) http.Handler {
 	settings, err := s.ds.GetSettings()
 	if err != nil {
-		log.Printf("[RealIP] failed to load settings: %v — skipping forwarded-header trust", err)
-		return nil
+		log.Printf("[ClientIP] failed to load settings: %v - falling back to peer-only", err)
+		return clientIPMiddleware(false, nil, nil)
 	}
 
-	if !settings.TrustForwardedHeaders {
-		return nil
-	}
-
-	cidrs, err := ParseTrustedProxyCIDRs(settings.TrustedProxyCIDRs)
-	if err != nil {
-		log.Printf("[RealIP] invalid trusted_proxy_cidrs: %v — skipping forwarded-header trust", err)
-		return nil
-	}
-
-	return TrustedRealIP(cidrs)
+	return buildClientIPMiddleware(settings.TrustForwardedHeaders, settings.TrustedProxyCIDRs)
 }
 
 // SetVersionInfo sets the version information for the server.
@@ -801,11 +799,84 @@ func (s *Server) GetDiscoverySettings() (time.Duration, bool) {
 }
 
 // SetHTTPServerURL sets the external HTTPS URL of the service.
+//
+// Deprecated: prefer SetHTTPSSettings, which tracks the override vs the
+// derived value so the effective URL follows the Target Domain. Kept for
+// callers that set the effective URL directly.
 func (s *Server) SetHTTPServerURL(url string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	s.httpsServerURL = url
+}
+
+// SetHTTPSSettings records the HTTPS URL override (empty = derive from
+// the Target Domain), the configured HTTPS port, and the startup
+// hostname-based fallback, then recomputes the effective HTTPS URL.
+func (s *Server) SetHTTPSSettings(override, httpsPort, defaultURL string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.httpsOverride = strings.TrimSpace(override)
+	s.httpsPort = httpsPort
+	s.httpsDefaultURL = defaultURL
+	s.recomputeHTTPSURLLocked()
+}
+
+// recomputeHTTPSURLLocked refreshes the effective HTTPS URL from the
+// current serverURL + override + port. Callers must hold s.mu.
+func (s *Server) recomputeHTTPSURLLocked() {
+	s.httpsServerURL = DeriveHTTPSURL(s.serverURL, s.httpsOverride, s.httpsPort, s.httpsDefaultURL)
+}
+
+// applyHTTPSOverrideLocked sets the HTTPS override from an optional
+// request value (nil = preserve the current one, non-nil replaces it,
+// empty re-enables deriving) and recomputes the effective URL. Callers
+// must hold s.mu.
+func (s *Server) applyHTTPSOverrideLocked(override *string) {
+	if override != nil {
+		s.httpsOverride = strings.TrimSpace(*override)
+	}
+
+	s.recomputeHTTPSURLLocked()
+}
+
+// HTTPSOverride returns the explicit HTTPS URL override, or "" when the
+// effective URL is derived from the Target Domain.
+func (s *Server) HTTPSOverride() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.httpsOverride
+}
+
+// SetHTTPSListenAddr records the address the HTTPS listener is bound
+// to (e.g. ":8443"). The cert-chain health check uses its port to
+// detect an advertised-URL/listener port mismatch (issue #355).
+func (s *Server) SetHTTPSListenAddr(addr string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.httpsListenAddr = addr
+}
+
+// actualHTTPSPort returns the port the HTTPS listener is bound to, or
+// "" if unknown/unparseable.
+func (s *Server) actualHTTPSPort() string {
+	s.mu.RLock()
+	addr := s.httpsListenAddr
+	s.mu.RUnlock()
+
+	if addr == "" {
+		return ""
+	}
+
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return ""
+	}
+
+	return port
 }
 
 // SetRecorder sets the recorder for the server.

@@ -41,7 +41,7 @@ type speakerSourcesXML struct {
 func RegisterSourcesXMLDiff(r *Registry, ds *datastore.DataStore) {
 	r.Register(Check{
 		ID:    CheckIDSourcesXMLDiff,
-		Title: "Speaker /sources matches service Sources.xml",
+		Title: "Speaker /sources should match service Sources.xml",
 		Run: func() []Finding {
 			return runSourcesXMLDiff(ds)
 		},
@@ -155,7 +155,7 @@ func diffSourcesForDeviceWithURL(ds *datastore.DataStore, account, deviceID, ipA
 				"Speaker is missing %d source type(s) the service advertises: %s.",
 				len(missingOnSpeaker), strings.Join(missingOnSpeaker, ", "),
 			),
-			Details: "After a power-cycle the speaker fetches /full from the service and re-registers its source list. Forcing a sourcesUpdated notification triggers the same refresh without rebooting.",
+			Details: "After a power-cycle the speaker fetches /full from the service and re-registers its source list. Forcing a sourcesUpdated notification triggers the same refresh without rebooting. If radio source types still won't activate after an in-place migration (a reboot and this notification don't help), see the troubleshooting guide; the confirmed remedy is a factory reset + re-migrate: https://gesellix.github.io/Bose-SoundTouch/docs/guides/TROUBLESHOOTING/#radio-sources-after-migration",
 			ManualCommands: []ManualCommand{{
 				Label:   "Trigger a sources refresh on the speaker:",
 				Command: notifyCmd,

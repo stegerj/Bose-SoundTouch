@@ -21,7 +21,7 @@ The service includes a built-in HTTPS listener (default port `8443`) that presen
 - Wildcard: `*.api.bose.io`, `*.api.bosecm.com`
 - Specific: `streaming.bose.com`, `bmx.bose.com`, `stats.bose.com`, `updates.bose.com`, `worldwide.bose.com`, `bose-prod.apigee.net`, `media.bose.io`, `downloads.bose.com`, `voice.api.bose.io`, and more
 
-> **Note**: The hostname you configure as `HTTPS_SERVER_URL` (e.g. `https://soundtouch.fritz.box:8443`) is also added as a Subject Alternative Name, ensuring valid TLS for direct browser or API access.
+> **Note**: The HTTPS endpoint is only needed for certain features (the DNS-based redirect, Spotify/Amazon login, and certificate trust). Its URL is added as a Subject Alternative Name, ensuring valid TLS for direct browser or API access. By default this URL is **derived from the Target Domain** (same host, `https`, on the HTTPS port), so you usually don't configure it separately. If you don't need plain HTTP at all, you can set the Target Domain itself to an `https://` URL — it is then used as the HTTPS endpoint as-is, with no separate override. Settings → **HTTPS URL** shows the effective value; set an override (`HTTPS_SERVER_URL` / `--https-server-url`, or the "advanced" field in Settings) only when a reverse proxy serves HTTPS on a different host or port.
 
 ---
 
@@ -120,25 +120,16 @@ server {
     location / {
         proxy_pass http://localhost:8000;
         proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
 }
 ```
 
-> **Tell the service to honour `X-Real-IP`/`X-Forwarded-For`.** When deploying
-> behind a reverse proxy on the same host as above, set
-> `"trust_forwarded_headers": true` in `data/settings.json`. With that flag
-> on, the service rewrites `r.RemoteAddr` from the proxy-supplied headers,
-> so handlers that act on the source IP (e.g. the Spotify priming triggered
-> by `/marge/streaming/support/power_on`) see the speaker's real address
-> instead of the proxy's loopback peer.
->
-> By default only `127.0.0.0/8` and `::1/128` are trusted to set those
-> headers. If your reverse proxy lives on a different host, list its CIDR(s)
-> in `"trusted_proxy_cidrs"` (e.g. `["10.0.0.0/8"]`). Do **not** enable
-> `trust_forwarded_headers` on a flat LAN deployment without a proxy: a
-> malicious speaker on the LAN can send the headers itself and spoof its
-> source IP.
+> **Client IP behind a proxy.** A reverse proxy changes the source IP the
+> service sees, which matters for the handlers that act on it. Configuring
+> AfterTouch to recover the real speaker IP from `X-Forwarded-For`
+> (`trust_forwarded_headers` / `trusted_proxy_cidrs`) is covered under
+> [Client IP behind a proxy or load balancer](CLOUD-DEPLOY-WALKTHROUGH.md#client-ip-behind-a-proxy-or-load-balancer).
 
 ---
 

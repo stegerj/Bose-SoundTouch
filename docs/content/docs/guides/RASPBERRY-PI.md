@@ -6,13 +6,19 @@ host) using the provided installer scripts.
 
 Two scripts are available, one per binary:
 
-| Script           | Binary               | Role                                | Default port |
-|------------------|----------------------|-------------------------------------|--------------|
-| `install.sh`     | `soundtouch-service` | Cloud-replacement relay — always-on | 80 / 443     |
-| `install-web.sh` | `soundtouch-player`     | Browser control panel               | 8080         |
+| Script              | Binary               | Role                                | Default port |
+|---------------------|----------------------|-------------------------------------|--------------|
+| `install.sh`        | `soundtouch-service` | Cloud-replacement relay — always-on | 80 / 443     |
+| `install-player.sh` | `soundtouch-player`  | Browser control panel               | 8080         |
 
 Both auto-detect CPU architecture (armv7 / arm64 / amd64), create a `soundtouch`
 system user, and install a systemd unit. They are safe to re-run for updates.
+Run without a version argument, they install the **latest release** (resolved
+from GitHub's `releases/latest` redirect); pass a tag to pin a specific version.
+Each installer has a matching uninstaller (`uninstall.sh`, `uninstall-player.sh`).
+
+Prefer to grab a binary by hand, or need `soundtouch-cli` / `soundtouch-backup`
+too? See the [Downloads page](../downloads/_index.md).
 
 For a complete install-through-migration walkthrough see
 [EXTERNAL-HOST-WALKTHROUGH.md](EXTERNAL-HOST-WALKTHROUGH.md).
@@ -34,14 +40,14 @@ sudo bash install.sh
 Install a specific version:
 
 ```bash
-sudo bash install.sh v0.107.0
+sudo bash install.sh v0.111.3
 ```
 
 Override defaults at install time:
 
 ```bash
 sudo \
-  VERSION=v0.107.0 \
+  VERSION=v0.111.3 \
   HOSTNAME_FQDN=soundtouch.local \
   HTTP_PORT=80 \
   HTTPS_PORT=443 \
@@ -99,7 +105,7 @@ journalctl -u soundtouch-service -b               # this boot only
 
 ```bash
 sudo bash install.sh              # update to latest release
-sudo bash install.sh v0.107.0     # update to a specific version
+sudo bash install.sh v0.111.3     # update to a specific version
 ```
 
 The script stops the service, downloads the new binary (backs up the old one to
@@ -107,13 +113,30 @@ The script stops the service, downloads the new binary (backs up the old one to
 
 ### Removal
 
+Use the uninstaller, which stops and disables the service and removes the unit,
+binary, and config. Your data directory is **preserved** by default:
+
+```bash
+curl -fsSL -o uninstall.sh \
+  https://raw.githubusercontent.com/gesellix/Bose-SoundTouch/main/scripts/raspberry-pi/uninstall.sh
+sudo bash uninstall.sh              # keep /var/lib/soundtouch-service
+sudo bash uninstall.sh --purge      # also delete the data directory
+```
+
+The `soundtouch:soundtouch` user/group is removed only once no other
+`soundtouch-*` install remains on the host.
+
+Prefer to do it by hand? The equivalent manual steps are:
+
 ```bash
 sudo systemctl disable --now soundtouch-service
 sudo rm /etc/systemd/system/soundtouch-service.service
 sudo rm -rf /etc/soundtouch-service
-sudo rm -rf /var/lib/soundtouch-service
 sudo rm /usr/local/bin/soundtouch-service
 sudo systemctl daemon-reload
+# Datastore (presets, device registrations, certs) — delete only if you are
+# sure you no longer need it:
+sudo rm -rf /var/lib/soundtouch-service
 ```
 
 ---
@@ -126,24 +149,24 @@ data and can be stopped or restarted at any time without data loss.
 ### Installation
 
 ```bash
-curl -fsSL -o install-web.sh \
-  https://raw.githubusercontent.com/gesellix/Bose-SoundTouch/main/scripts/raspberry-pi/install-web.sh
-sudo bash install-web.sh
+curl -fsSL -o install-player.sh \
+  https://raw.githubusercontent.com/gesellix/Bose-SoundTouch/main/scripts/raspberry-pi/install-player.sh
+sudo bash install-player.sh
 ```
 
 Install a specific version:
 
 ```bash
-sudo bash install-web.sh v0.107.0
+sudo bash install-player.sh v0.111.3
 ```
 
 Override defaults at install time:
 
 ```bash
 sudo \
-  VERSION=v0.107.0 \
+  VERSION=v0.111.3 \
   HTTP_PORT=8081 \
-  bash install-web.sh
+  bash install-player.sh
 ```
 
 Once running, open **`http://<pi-ip>:8080`** in a browser.
@@ -228,11 +251,24 @@ journalctl -u soundtouch-player -f
 ### Updates
 
 ```bash
-sudo bash install-web.sh              # update to latest release
-sudo bash install-web.sh v0.107.0     # update to a specific version
+sudo bash install-player.sh              # update to latest release
+sudo bash install-player.sh v0.111.3     # update to a specific version
 ```
 
 ### Removal
+
+Use the uninstaller:
+
+```bash
+curl -fsSL -o uninstall-player.sh \
+  https://raw.githubusercontent.com/gesellix/Bose-SoundTouch/main/scripts/raspberry-pi/uninstall-player.sh
+sudo bash uninstall-player.sh
+```
+
+The `soundtouch:soundtouch` user/group is removed only once no other
+`soundtouch-*` install remains on the host.
+
+Prefer to do it by hand? The equivalent manual steps are:
 
 ```bash
 sudo systemctl disable --now soundtouch-player
@@ -258,7 +294,7 @@ Override if needed:
 
 ```bash
 sudo ARCH_ASSET=linux-arm64 bash install.sh
-sudo ARCH_ASSET=linux-arm64 bash install-web.sh
+sudo ARCH_ASSET=linux-arm64 bash install-player.sh
 ```
 
 ---

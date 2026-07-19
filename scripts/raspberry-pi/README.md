@@ -21,14 +21,43 @@ sudo bash install.sh
 **soundtouch-player** (browser control panel):
 
 ```bash
-curl -fsSL -o install-web.sh \
-  https://raw.githubusercontent.com/gesellix/Bose-SoundTouch/main/scripts/raspberry-pi/install-web.sh
-sudo bash install-web.sh
+curl -fsSL -o install-player.sh \
+  https://raw.githubusercontent.com/gesellix/Bose-SoundTouch/main/scripts/raspberry-pi/install-player.sh
+sudo bash install-player.sh
 ```
 
-Pass a version tag as the first argument to pin a specific release:
+Both install the **latest release** by default (resolved from GitHub's
+`releases/latest` redirect). Pass a version tag as the first argument to pin a
+specific release:
 
 ```bash
-sudo bash install.sh v0.107.0
-sudo bash install-web.sh v0.107.0
+sudo bash install.sh v0.111.3
+sudo bash install-player.sh v0.111.3
 ```
+
+## Removal
+
+Matching uninstallers reverse each installer (stop and disable the service,
+remove the unit, binary, and config). You can also remove things by hand — see
+the [full guide](../../docs/content/docs/guides/RASPBERRY-PI.md) for the manual
+commands.
+
+```bash
+# soundtouch-service (keeps the data directory unless you pass --purge):
+curl -fsSL -o uninstall.sh \
+  https://raw.githubusercontent.com/gesellix/Bose-SoundTouch/main/scripts/raspberry-pi/uninstall.sh
+sudo bash uninstall.sh
+
+# soundtouch-player:
+curl -fsSL -o uninstall-player.sh \
+  https://raw.githubusercontent.com/gesellix/Bose-SoundTouch/main/scripts/raspberry-pi/uninstall-player.sh
+sudo bash uninstall-player.sh
+
+# soundtouch-web (deprecated; switch to soundtouch-player afterwards):
+curl -fsSL -o uninstall-web.sh \
+  https://raw.githubusercontent.com/gesellix/Bose-SoundTouch/main/scripts/raspberry-pi/uninstall-web.sh
+sudo bash uninstall-web.sh
+```
+
+The shared `soundtouch:soundtouch` user/group is removed only once no other
+`soundtouch-*` install remains on the host.

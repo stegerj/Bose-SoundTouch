@@ -10,7 +10,7 @@ set -euo pipefail
 # Examples (override defaults via env vars):
 #
 #   sudo \
-#     VERSION=v0.107.0 \
+#     VERSION=v0.111.3 \
 #     HOSTNAME_FQDN=soundtouch.local \
 #     HTTP_PORT=80 \
 #     HTTPS_PORT=443 \
@@ -18,7 +18,7 @@ set -euo pipefail
 #     bash install.sh
 #
 # Or with a version argument to perform an update:
-#   sudo bash install.sh v0.107.0
+#   sudo bash install.sh v0.111.3
 #
 # Notes:
 # - This script downloads a release binary for your CPU (auto-detects armv7/arm64/amd64).
@@ -28,11 +28,16 @@ set -euo pipefail
 # - Safe to re-run; it will update binary/config/unit and restart the service.
 # ==============================================================================
 
-VERSION="${1:-${VERSION:-v0.107.0}}"
-# Normalize version prefix
-if [[ ! "$VERSION" =~ ^v ]]; then
+# Release to install. Empty means "resolve the latest release" (see
+# resolve_version). Pass a tag/number as $1 or VERSION=... to pin a release.
+VERSION="${1:-${VERSION:-}}"
+# Normalize version prefix for an explicitly provided version.
+if [[ -n "$VERSION" && ! "$VERSION" =~ ^v ]]; then
   VERSION="v${VERSION}"
 fi
+GH_REPO="${GH_REPO:-gesellix/Bose-SoundTouch}"
+# Used only when the latest-release lookup fails (offline / rate-limited).
+FALLBACK_VERSION="${FALLBACK_VERSION:-v0.111.3}"
 SERVICE_NAME="${SERVICE_NAME:-soundtouch-service}"
 BIN_PATH="${BIN_PATH:-/usr/local/bin/soundtouch-service}"
 
@@ -117,7 +122,7 @@ detect_arch_asset() {
 download_url_for() {
   local asset="$1"
   # Release asset pattern used by you earlier:
-  # soundtouch-service-v0.107.0-linux-armv7
+  # soundtouch-service-v0.111.3-linux-armv7
   echo "https://github.com/gesellix/Bose-SoundTouch/releases/download/${VERSION}/soundtouch-service-${VERSION}-${asset}"
 }
 
@@ -174,6 +179,40 @@ download_binary() {
 
   install -m 0755 "${tmp}/soundtouch-service" "${BIN_PATH}"
   log "Installed binary to ${BIN_PATH}"
+}
+
+resolve_version() {
+  # When no explicit version was given, resolve the latest release tag by
+  # following the documented stable redirect:
+  #   https://github.com/<owner>/<repo>/releases/latest
+  # which 302-redirects to .../releases/tag/vX.Y.Z. We read the final URL and
+  # take the tag from it. Falls back to FALLBACK_VERSION on any failure
+  # (offline, rate-limited, no usable curl/wget).
+  if [[ -n "$VERSION" ]]; then
+    return
+  fi
+
+  local latest_url="https://github.com/${GH_REPO}/releases/latest"
+  log "Resolving latest release via ${latest_url}"
+
+  local effective="" tag=""
+  if command -v curl >/dev/null 2>&1; then
+    effective="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$latest_url" 2>/dev/null)" || true
+  else
+    # wget: don't follow the redirect, read the Location header instead.
+    effective="$(wget -S --max-redirect=0 -O /dev/null "$latest_url" 2>&1 \
+      | awk 'tolower($1) ~ /location:/ {print $2}' | tr -d '\r' | tail -1)" || true
+  fi
+  tag="${effective##*/}"
+
+  if [[ "$tag" =~ ^v?[0-9]+\.[0-9]+ ]]; then
+    [[ "$tag" =~ ^v ]] || tag="v${tag}"
+    VERSION="$tag"
+    log "Latest release is ${VERSION}"
+  else
+    VERSION="$FALLBACK_VERSION"
+    log "⚠️ Could not resolve latest release; falling back to ${VERSION}"
+  fi
 }
 
 self_update() {
@@ -364,6 +403,7 @@ main() {
     apt_install_if_missing curl
   fi
 
+  resolve_version
   self_update "$@"
 
   ensure_user_group

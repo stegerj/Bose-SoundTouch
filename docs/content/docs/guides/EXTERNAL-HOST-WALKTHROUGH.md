@@ -34,13 +34,13 @@ sudo bash install.sh
 ```
 
 The installer detects your Pi's architecture (armv7, arm64, or amd64), downloads
-the binary, creates a `soundtouch` system user, and registers a systemd unit that
-starts on boot.
+the latest release binary, creates a `soundtouch` system user, and registers a
+systemd unit that starts on boot.
 
-To install a specific version:
+To pin a specific version instead of the latest:
 
 ```bash
-sudo bash install.sh v0.107.0
+sudo bash install.sh v0.111.3
 ```
 
 Check that the service is running:
@@ -55,7 +55,7 @@ installer defaults to port 80, not 8000) — open it in a browser.
 ### Other Linux hosts (systemd)
 
 Download the binary for your architecture from the
-[Releases page](https://github.com/gesellix/Bose-SoundTouch/releases), then
+[Downloads page](../downloads/_index.md), then
 install it as a systemd service — see [DEPLOYMENT.md](DEPLOYMENT.md) for the
 unit file template.
 
@@ -66,12 +66,27 @@ docker run -d \
   --name aftertouch \
   --network host \
   -e SERVER_URL=http://192.0.2.10:8000 \
-  -v aftertouch-data:/data \
+  -v aftertouch-data:/app/data \
   ghcr.io/gesellix/bose-soundtouch:latest
 ```
 
 Replace `192.0.2.10` with the host machine's LAN IP. The `--network host` flag
 is required so AfterTouch can reach the speakers and respond to mDNS discovery.
+
+> **Persist the data directory.** The container stores everything stateful under
+> `/app/data` (`DATA_DIR`): the datastore, `settings.json`, and the service CA.
+> Mount a volume there (`-v <volume>:/app/data`, as above) or this state is lost
+> when the container is recreated. Losing the CA forces you to re-migrate every
+> speaker and re-trust the new CA, so back this volume up before upgrading.
+
+> **Windows / macOS (Docker Desktop):** `--network host` does not work the same
+> way as on Linux, so publish the ports explicitly instead, e.g.
+> `-p 8000:8000 -p 8443:8443`. mDNS discovery across the Docker Desktop network
+> boundary is unreliable; add speakers by IP in the Devices tab. If you also use
+> DNS interception (so the speaker resolves Bose hostnames to AfterTouch), you
+> additionally need to publish the DNS port (`-p 53:53/udp -p 53:53/tcp`) and
+> make AfterTouch reachable on `:443` (the hardcoded Bose hosts are plain HTTPS),
+> e.g. `-p 443:8443`. Keep the same `-v <volume>:/app/data` mount.
 
 ---
 
@@ -176,12 +191,12 @@ open **`http://<host-ip>:8080`** in your browser (default port 8080).
 ### Installing soundtouch-player on a Raspberry Pi
 
 `install.sh` only installs `soundtouch-service`. Use the dedicated
-`install-web.sh` script to add soundtouch-player:
+`install-player.sh` script to add soundtouch-player:
 
 ```bash
-curl -fsSL -o install-web.sh \
-  https://raw.githubusercontent.com/gesellix/Bose-SoundTouch/main/scripts/raspberry-pi/install-web.sh
-sudo bash install-web.sh
+curl -fsSL -o install-player.sh \
+  https://raw.githubusercontent.com/gesellix/Bose-SoundTouch/main/scripts/raspberry-pi/install-player.sh
+sudo bash install-player.sh
 ```
 
 For configuration, service management, updates, and removal see the
@@ -190,7 +205,7 @@ For configuration, service management, updates, and removal see the
 ### Installing soundtouch-player on other hosts
 
 Download the binary for your OS and architecture from the
-[Releases page](https://github.com/gesellix/Bose-SoundTouch/releases)
+[Downloads page](../downloads/_index.md)
 and run it directly:
 
 ```bash
@@ -224,7 +239,7 @@ slot.
 ### Alternatively — storing presets via soundtouch-cli (any machine on the LAN)
 
 Download the CLI for your machine from the
-[Releases page](https://github.com/gesellix/Bose-SoundTouch/releases), then:
+[Downloads page](../downloads/_index.md), then:
 
 ```bash
 # Play a custom radio stream on the speaker
@@ -263,7 +278,7 @@ curl -s http://192.0.2.1:8090/presets
 
 ```bash
 sudo bash install.sh              # updates to latest release
-sudo bash install.sh v0.107.0     # updates to a specific version
+sudo bash install.sh v0.111.3     # updates to a specific version
 ```
 
 The installer stops the service, downloads the new binary, and restarts
