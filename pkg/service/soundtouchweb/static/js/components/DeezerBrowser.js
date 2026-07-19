@@ -28,7 +28,7 @@ const S = {
     minWidth: 0,
     cursor: isExpandable ? 'pointer' : 'default'
   }),
-  rowTextTitle: { color: '#fff', fontWeight: 500, fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  rowTextTitle: { color: '#fff', fontWeight: 500, fontSize: '14px', overflowWrap: 'anywhere', wordBreak: 'break-word' },
   rowTextSubtitle: { color: '#888', fontSize: '12px' },
   rowActions: { display: 'flex', gap: '6px', alignItems: 'center', flexShrink: 0 },
 };
@@ -361,7 +361,7 @@ export function DeezerBrowser({ devices, deviceId }) {
                   <div key=${t.id} style=${{ display:'flex', alignItems:'center', gap:'8px', padding:'5px 8px',
                                              background:'#252525', borderRadius:'4px', marginBottom:'4px' }}>
                     <span style=${{ color:'#888', fontSize:'12px', width:'16px', textAlign:'right', flexShrink:0 }}>${i + 1}</span>
-                    <span style=${{ flex:1, color:'#fff', fontSize:'13px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>${t.title}</span>
+                    <span style=${{ flex:1, color:'#fff', fontSize:'13px', overflowWrap:'anywhere', wordBreak:'break-word' }}>${t.title}</span>
                     <button style=${S.play} onClick=${(e) => { e.stopPropagation(); handleAction('play', { ...t, type:'track' }, entry.tracks); }}>▶</button>
                     <button style=${S.add}  onClick=${(e) => { e.stopPropagation(); handleAction('add',  { ...t, type:'track' }, entry.tracks); }}>+</button>
                   </div>
@@ -379,7 +379,7 @@ export function DeezerBrowser({ devices, deviceId }) {
                 <div key=${t.id} style=${{ display:'flex', alignItems:'center', gap:'8px', padding:'5px 8px',
                                            background:'#252525', borderRadius:'4px', marginBottom:'4px' }}>
                   <span style=${{ color:'#888', fontSize:'12px', width:'16px', textAlign:'right', flexShrink:0 }}>${i + 1}</span>
-                  <span style=${{ flex:1, color:'#fff', fontSize:'13px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>${t.title}</span>
+                  <span style=${{ flex:1, color:'#fff', fontSize:'13px', overflowWrap:'anywhere', wordBreak:'break-word' }}>${t.title}</span>
                   <button style=${S.play} onClick=${(e) => { e.stopPropagation(); handleAction('play', { ...t, type:'track' }, entry.tracks); }}>▶</button>
                   <button style=${S.add}  onClick=${(e) => { e.stopPropagation(); handleAction('add',  { ...t, type:'track' }, entry.tracks); }}>+</button>
                 </div>
@@ -450,7 +450,7 @@ export function DeezerBrowser({ devices, deviceId }) {
             <div key=${t.id} style=${{ display:'flex', alignItems:'center', gap:'8px', padding:'6px 8px',
                                        background:'#1e1e1e', borderRadius:'4px', marginBottom:'4px' }}>
               <span style=${{ color:'#888', fontSize:'12px', width:'16px', textAlign:'right', flexShrink:0 }}>${i + 1}</span>
-              <span style=${{ flex:1, color:'#fff', fontSize:'13px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>${t.title}</span>
+              <span style=${{ flex:1, color:'#fff', fontSize:'13px', overflowWrap:'anywhere', wordBreak:'break-word' }}>${t.title}</span>
               <button style=${S.play} onClick=${() => handleAction('play', { ...t, type:'track' }, tracks)}>▶</button>
               <button style=${S.add}  onClick=${() => handleAction('add',  { ...t, type:'track' }, tracks)}>+</button>
             </div>
@@ -537,7 +537,7 @@ export function DeezerBrowser({ devices, deviceId }) {
               ${queue.current.cover_url ? html`<img src=${queue.current.cover_url} style=${{ width:'40px', height:'40px', borderRadius:'4px', objectFit:'cover' }} />` : null}
               <div style=${{ flex:1, minWidth:0 }}>
                 <div style=${{ color:'#34c759', fontSize:'11px', fontWeight:600, marginBottom:'2px' }}>▶ IN RIPRODUZIONE</div>
-                <div style=${{ color:'#fff', fontSize:'14px', fontWeight:500, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>${queue.current.title}</div>
+                <div style=${{ color:'#fff', fontSize:'14px', fontWeight:500, overflowWrap:'anywhere', wordBreak:'break-word' }}>${queue.current.title}</div>
                 <div style=${{ color:'#888', fontSize:'12px' }}>${queue.current.artist}</div>
               </div>
             </div>
@@ -551,7 +551,7 @@ export function DeezerBrowser({ devices, deviceId }) {
               <span style=${{ color:'#555', fontSize:'12px', width:'18px', textAlign:'right', flexShrink:0 }}>${i + 1}</span>
               ${t.cover_url ? html`<img src=${t.cover_url} style=${{ width:'32px', height:'32px', borderRadius:'3px', objectFit:'cover' }} />` : null}
               <div style=${{ flex:1, minWidth:0 }}>
-                <div style=${{ color:'#ddd', fontSize:'13px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>${t.title}</div>
+                <div style=${{ color:'#ddd', fontSize:'13px', overflowWrap:'anywhere', wordBreak:'break-word' }}>${t.title}</div>
                 <div style=${{ color:'#666', fontSize:'11px' }}>${t.artist}</div>
               </div>
               <button style=${{ ...S.pillBtn, background:'transparent', color:'#666', padding:'2px 6px', fontSize:'16px' }}
