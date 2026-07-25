@@ -117,4 +117,9 @@ export const api = {
     deezerQueueRemove: (deviceId, index) => req(`/api/control/providers/deezer/devices/${deviceId}/queue/remove?index=${index}`, {
         method: 'POST',
     }),
+    deezerPlayAlbum: (deviceId, albumId, name) => req(`/api/control/providers/deezer/devices/${deviceId}/play/album`, {
+        method: 'POST',
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ albumId, name }),
+    }),
 };

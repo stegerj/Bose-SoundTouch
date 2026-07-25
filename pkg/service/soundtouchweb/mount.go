@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/stegerj/bose-soundtouch/pkg/discovery"
 	"github.com/go-chi/chi/v5"
+	"github.com/stegerj/bose-soundtouch/pkg/discovery"
 )
 
 // MountWeb registers the portable soundtouch-player surface on r: the embedded
@@ -136,6 +136,7 @@ func (app *WebApp) MountWeb(r chi.Router, discoveryService *discovery.UnifiedDis
 				//   POST   /queue/next    — skip current track (⏭)
 				//   POST   /queue/clear   — wipe upcoming / parked list (✕)
 				//   POST   /queue/remove  — remove upcoming[index]
+				//   POST   /play/album   — play album natively (bypasses queue)
 				r.Post("/devices/{id}/queue", app.HandleDeezerQueueReplace)
 				r.Post("/devices/{id}/queue/add", app.HandleDeezerQueueAdd)
 				r.Get("/devices/{id}/queue/status", app.HandleDeezerQueueStatus)
@@ -144,6 +145,7 @@ func (app *WebApp) MountWeb(r chi.Router, discoveryService *discovery.UnifiedDis
 				r.Post("/devices/{id}/queue/next", app.HandleDeezerQueueSkip)
 				r.Post("/devices/{id}/queue/clear", app.HandleDeezerQueueClear)
 				r.Post("/devices/{id}/queue/remove", app.HandleDeezerQueueRemove)
+				r.Post("/devices/{id}/play/album", app.HandleDeezerPlayAlbum)
 			})
 
 			r.Route("/radiobrowser", func(r chi.Router) {

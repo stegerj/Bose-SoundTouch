@@ -15,8 +15,15 @@ import (
 // Base URL for the Deezer API.
 const DefaultDeezerBaseURL = "https://api.deezer.com"
 
+// Deezer API configuration constants.
+const (
+	defaultTimeout     = 10 * time.Second
+	paginationLimit    = 100
+	paginationMaxIndex = 1000
+)
+
 // DefaultClient is the default shared instance of the Deezer API wrapper.
-var DefaultClient = NewClient(DefaultDeezerBaseURL, 10*time.Second)
+var DefaultClient = NewClient(DefaultDeezerBaseURL, defaultTimeout)
 
 // ============================================================================
 // STRUCTS & MODELS
@@ -76,7 +83,7 @@ type DeezerAlbumTracksResponse struct {
 
 // SoundTouchSources XML structs for safe device parsing.
 type SoundTouchSources struct {
-	XMLName     xml.Name              `xml:"sources"`
+	XMLName     xml.Name               `xml:"sources"`
 	SourceItems []SoundTouchSourceItem `xml:"sourceItem"`
 }
 
@@ -98,6 +105,9 @@ type Client struct {
 
 // NewClient bootstraps a pristine Deezer HTTP Client.
 func NewClient(baseURL string, timeout time.Duration) *Client {
+	if timeout <= 0 {
+		timeout = defaultTimeout
+	}
 	return &Client{
 		BaseURL: baseURL,
 		HTTPClient: &http.Client{
@@ -154,30 +164,27 @@ func (c *Client) DeezerSearch(ctx context.Context, query string, searchType stri
 func (c *Client) DeezerArtistAlbums(ctx context.Context, artistID string) (*DeezerArtistAlbumsResponse, error) {
 	var final DeezerArtistAlbumsResponse
 	index := 0
-	const limit = 100 // Maximum batch size supported by Deezer
 
 	for {
-		apiURL := fmt.Sprintf("%s/artist/%s/albums?index=%d&limit=%d", c.BaseURL, artistID, index, limit)
+		apiURL := fmt.Sprintf("%s/artist/%s/albums?index=%d&limit=%d", c.BaseURL, artistID, index, paginationLimit)
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to create request: %w", err)
 		}
 
 		resp, err := c.HTTPClient.Do(req)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to fetch albums: %w", err)
 		}
+		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			_ = resp.Body.Close()
 			return nil, fmt.Errorf("deezer artist albums failed with status %d", resp.StatusCode)
 		}
 
 		var page DeezerArtistAlbumsResponse
-		err = json.NewDecoder(resp.Body).Decode(&page)
-		_ = resp.Body.Close()
-		if err != nil {
-			return nil, err
+		if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
+			return nil, fmt.Errorf("failed to decode response: %w", err)
 		}
 
 		// Fail early on API errors returning HTTP 200
@@ -187,14 +194,14 @@ func (c *Client) DeezerArtistAlbums(ctx context.Context, artistID string) (*Deez
 
 		final.Data = append(final.Data, page.Data...)
 
-		// Stop pagination when matching final offsets or receiving empty items
-		if len(page.Data) < limit {
+		// Stop pagination when receiving fewer items than the limit
+		if len(page.Data) < paginationLimit {
 			break
 		}
-		index += limit
+		index += paginationLimit
 
 		// Safety cap to prevent runaway memory on anomalous loops
-		if index >= 1000 {
+		if index >= paginationMaxIndex {
 			break
 		}
 	}
@@ -209,22 +216,22 @@ func (c *Client) DeezerArtistTopTracks(ctx context.Context, artistID string) (*D
 
 // DeezerArtistTracklist retrieves up to 100 top tracks for filling large device lists.
 func (c *Client) DeezerArtistTracklist(ctx context.Context, artistID string) (*DeezerTrackListResponse, error) {
-	return c.fetchTrackList(ctx, fmt.Sprintf("%s/artist/%s/top?limit=100", c.BaseURL, artistID))
+	return c.fetchTrackList(ctx, fmt.Sprintf("%s/artist/%s/top?limit=%d", c.BaseURL, artistID, paginationLimit))
 }
 
 // DeezerAlbumTracks retrieves all tracks for an album safely.
 func (c *Client) DeezerAlbumTracks(ctx context.Context, albumID string) (*DeezerAlbumTracksResponse, error) {
-	apiURL := fmt.Sprintf("%s/album/%s/tracks?limit=100", c.BaseURL, albumID)
+	apiURL := fmt.Sprintf("%s/album/%s/tracks?limit=%d", c.BaseURL, albumID, paginationLimit)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to fetch album tracks: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("deezer album tracks failed with status %d", resp.StatusCode)
@@ -232,7 +239,7 @@ func (c *Client) DeezerAlbumTracks(ctx context.Context, albumID string) (*Deezer
 
 	var data DeezerAlbumTracksResponse
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
 	if data.Error != nil {
@@ -317,7 +324,7 @@ func (c *Client) DeezerSourceAccount(ctx context.Context, deviceIP string) strin
 	if err != nil {
 		return ""
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		return ""
@@ -330,7 +337,6 @@ func (c *Client) DeezerSourceAccount(ctx context.Context, deviceIP string) strin
 
 	var sources SoundTouchSources
 	if err := xml.Unmarshal(body, &sources); err != nil {
-		// Fallback logging or recovery can reside here
 		return ""
 	}
 

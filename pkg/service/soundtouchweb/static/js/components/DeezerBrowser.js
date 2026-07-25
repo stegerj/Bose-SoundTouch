@@ -31,7 +31,14 @@ const S = {
   rowTextTitle: { color: '#fff', fontWeight: 500, fontSize: '14px', overflowWrap: 'anywhere', wordBreak: 'break-word' },
   rowTextSubtitle: { color: '#888', fontSize: '12px' },
   rowActions: { display: 'flex', gap: '6px', alignItems: 'center', flexShrink: 0 },
+  trackItem: { display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 8px', background: '#252525', borderRadius: '4px', marginBottom: '4px' },
+  trackNumber: { color: '#888', fontSize: '12px', width: '16px', textAlign: 'right', flexShrink: 0 },
+  trackTitle: { flex: 1, color: '#fff', fontSize: '13px', overflowWrap: 'anywhere', wordBreak: 'break-word' },
 };
+
+// Status message timeout in milliseconds
+const STATUS_TIMEOUT = 4000;
+const SUCCESS_TIMEOUT = 2500;
 
 // Normalises any track-like object into the canonical shape.
 // Ensures BOTH cover_url and imageUrl are set to fix the search/track rendering bug.
@@ -128,9 +135,9 @@ export function DeezerBrowser({ devices, deviceId }) {
       const { tracks: top5, albums, related } = await fetchArtistData(artist);
       setArtistPage({ artist, tracks: top5, albums, related, loading: false });
     } catch (err) {
-      console.error(err);
+      console.error('[artist page]', err);
       setStatus("Errore nel caricamento dell'artista.");
-      setTimeout(() => setStatus(''), 4000);
+      setTimeout(() => setStatus(''), STATUS_TIMEOUT);
       goBack();
     }
   }
@@ -152,7 +159,6 @@ export function DeezerBrowser({ devices, deviceId }) {
   async function toggleExpand(item, type) {
     const key = eKey(type, item.id);
     if (expanded[key]) {
-      // Functional immutable deletion pattern (no live mutation operations on state)
       setExpanded(p => {
         const { [key]: _, ...rest } = p;
         return rest;
@@ -169,9 +175,9 @@ export function DeezerBrowser({ devices, deviceId }) {
         setExpanded(p => ({ ...p, [key]: { loading: false, tracks: top5, albums, related } }));
       }
     } catch (err) {
-      console.error(err);
+      console.error('[toggle expand]', err);
       setStatus('Errore nel caricamento dei dettagli.');
-      setTimeout(() => setStatus(''), 4000);
+      setTimeout(() => setStatus(''), STATUS_TIMEOUT);
       setExpanded(p => {
         const { [key]: _, ...rest } = p;
         return rest;
@@ -197,17 +203,32 @@ export function DeezerBrowser({ devices, deviceId }) {
     const devId = resolvedDeviceId;
     let tracks  = [];
 
+    // Native album play mode: bypass queue for better preset support
+    if (action === 'play' && type === 'album') {
+      setLoading(true);
+      try {
+        await api.deezerPlayAlbum(devId, item.id, item.name || item.title);
+        setStatus(`Album in riproduzione: ${item.name || item.title}`);
+        setTimeout(() => setStatus(''), SUCCESS_TIMEOUT);
+      } catch (e) {
+        console.error('[play album]', e);
+        setStatus(`Errore: ${e.message || "Impossibile riprodurre l'album"}`);
+        setTimeout(() => setStatus(''), STATUS_TIMEOUT);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     if (type === 'track') {
-      // Track level: play (or queue) only the clicked track, never the rest
-      // of its surrounding album/section.
       tracks = [normTrack(item)];
     } else if (type === 'album') {
       setLoading(true);
       try   { tracks = await fetchAlbumTracks(item); }
       catch (e) {
-        console.error(e);
+        console.error('[handle action album]', e);
         setStatus('Impossibile caricare le tracce.');
-        setTimeout(() => setStatus(''), 4000);
+        setTimeout(() => setStatus(''), STATUS_TIMEOUT);
         setLoading(false);
         return;
       }
@@ -221,9 +242,9 @@ export function DeezerBrowser({ devices, deviceId }) {
           imageUrl: t.album?.cover_medium || t.album?.cover_small || item.imageUrl || '',
         }));
       } catch (e) {
-        console.error(e);
+        console.error('[handle action artist]', e);
         setStatus('Impossibile caricare la tracklist.');
-        setTimeout(() => setStatus(''), 4000);
+        setTimeout(() => setStatus(''), STATUS_TIMEOUT);
         setLoading(false);
         return;
       }
@@ -232,7 +253,7 @@ export function DeezerBrowser({ devices, deviceId }) {
 
     if (!tracks.length) {
       setStatus('Nessuna traccia valida.');
-      setTimeout(() => setStatus(''), 4000);
+      setTimeout(() => setStatus(''), STATUS_TIMEOUT);
       return;
     }
     const task = { action, item: { ...item, type }, tracks };
@@ -246,16 +267,32 @@ export function DeezerBrowser({ devices, deviceId }) {
     try {
       if (action === 'play') {
         await api.deezerQueueReplace(devId, tracks);
-        setStatus(`In coda: ${item.name || item.title}`);
+        const trackCount = tracks.length;
+        const itemName = item.name || item.title;
+        if (item.type === 'artist') {
+          setStatus(`Playing ${trackCount} tracks by ${itemName}`);
+        } else if (item.type === 'album') {
+          setStatus(`Playing ${trackCount} tracks from ${itemName}`);
+        } else {
+          setStatus(`Playing: ${itemName}`);
+        }
       } else {
         await api.deezerQueueAdd(devId, tracks);
-        setStatus(`Aggiunto: ${item.name || item.title}`);
+        const trackCount = tracks.length;
+        const itemName = item.name || item.title;
+        if (item.type === 'artist') {
+          setStatus(`Added ${trackCount} tracks by ${itemName} to queue`);
+        } else if (item.type === 'album') {
+          setStatus(`Added ${trackCount} tracks from ${itemName} to queue`);
+        } else {
+          setStatus(`Added ${itemName} to queue`);
+        }
       }
-      setTimeout(() => setStatus(''), 2500);
+      setTimeout(() => setStatus(''), SUCCESS_TIMEOUT);
     } catch (err) {
-      console.error(err);
+      console.error('[execute task]', err);
       setStatus(`Errore: ${err.message || "Impossibile completare l'azione"}`);
-      setTimeout(() => setStatus(''), 4000);
+      setTimeout(() => setStatus(''), STATUS_TIMEOUT);
     } finally {
       setLoading(false);
       setPendingAction(null);
@@ -264,11 +301,11 @@ export function DeezerBrowser({ devices, deviceId }) {
 
   // ── queue controls ───────────────────────────────────────────────────────
 
-  async function stopQueue()      { if (!resolvedDeviceId) return; try { await api.deezerQueueStop(resolvedDeviceId);  } catch(e){console.error(e);} }
-  async function playQueue()      { if (!resolvedDeviceId) return; try { await api.deezerQueuePlay(resolvedDeviceId);  } catch(e){console.error(e);} }
-  async function skipTrack()      { if (!resolvedDeviceId) return; try { await api.deezerQueueNext(resolvedDeviceId);  } catch(e){console.error(e);} }
-  async function clearQueue()     { if (!resolvedDeviceId) return; try { await api.deezerQueueClear(resolvedDeviceId); } catch(e){console.error(e);} }
-  async function removeUpcoming(i){ if (!resolvedDeviceId) return; try { await api.deezerQueueRemove(resolvedDeviceId, i); } catch(e){console.error(e);} }
+  async function stopQueue()      { if (!resolvedDeviceId) return; try { await api.deezerQueueStop(resolvedDeviceId);  } catch(e){console.error('[queue stop]', e);} }
+  async function playQueue()      { if (!resolvedDeviceId) return; try { await api.deezerQueuePlay(resolvedDeviceId);  } catch(e){console.error('[queue play]', e);} }
+  async function skipTrack()      { if (!resolvedDeviceId) return; try { await api.deezerQueueNext(resolvedDeviceId);  } catch(e){console.error('[queue skip]', e);} }
+  async function clearQueue()     { if (!resolvedDeviceId) return; try { await api.deezerQueueClear(resolvedDeviceId); } catch(e){console.error('[queue clear]', e);} }
+  async function removeUpcoming(i){ if (!resolvedDeviceId) return; try { await api.deezerQueueRemove(resolvedDeviceId, i); } catch(e){console.error('[queue remove]', e);} }
 
   // ── search ───────────────────────────────────────────────────────────────
 
@@ -281,15 +318,15 @@ export function DeezerBrowser({ devices, deviceId }) {
       const list = res?.data;
       if (!Array.isArray(list) || !list.length) {
         setStatus('Nessun risultato.');
-        setTimeout(() => setStatus(''), 4000);
+        setTimeout(() => setStatus(''), STATUS_TIMEOUT);
         return;
       }
       setStatus(`${list.length} risultati:`);
       setSections([{ name: `${type[0].toUpperCase() + type.slice(1)} Risultati`, items: mapItems(list, type) }]);
     } catch (e) {
-      console.error(e);
+      console.error('[search]', e);
       setStatus('Errore nella ricerca.');
-      setTimeout(() => setStatus(''), 4000);
+      setTimeout(() => setStatus(''), STATUS_TIMEOUT);
     }
     finally     { setLoading(false); }
   }
@@ -319,6 +356,17 @@ export function DeezerBrowser({ devices, deviceId }) {
 
   // ── render helpers ───────────────────────────────────────────────────────
 
+  function renderTrackItem(track, index, contextList, background = '#252525') {
+    return html`
+      <div key=${track.id} style=${{ ...S.trackItem, background }}>
+        <span style=${S.trackNumber}>${index + 1}</span>
+        <span style=${S.trackTitle}>${track.title}</span>
+        <button style=${S.play} onClick=${(e) => { e.stopPropagation(); handleAction('play', { ...track, type:'track' }, contextList); }} title="Play now">▶</button>
+        <button style=${S.add}  onClick=${(e) => { e.stopPropagation(); handleAction('add',  { ...track, type:'track' }, contextList); }} title="Add to queue">+</button>
+      </div>
+    `;
+  }
+
   function renderRow(item, contextList, depth = 0) {
     if (!item) return null;
     const type = item.type || searchType;
@@ -344,8 +392,8 @@ export function DeezerBrowser({ devices, deviceId }) {
         <div style=${S.rowActions}>
           ${isExpandable ? html`<button style=${S.expand} onClick=${() => toggleExpand(item, type)}>${isOpen ? '▾' : '▸'}</button>` : null}
           <button style=${S.play} onClick=${(e) => { e.stopPropagation(); handleAction('play', { ...item, type }, contextList); }}
-                  title=${type === 'artist' ? 'Top 50' : 'Riproduci'}>${type === 'artist' ? '▶ Top 50' : '▶'}</button>
-          <button style=${S.add}  onClick=${(e) => { e.stopPropagation(); handleAction('add', { ...item, type }, contextList); }}>+</button>
+                  title=${type === 'album' ? 'Play album (native mode)' : type === 'artist' ? 'Play top tracks' : 'Play now'}>${type === 'artist' ? '▶ Top 50' : '▶'}</button>
+          <button style=${S.add}  onClick=${(e) => { e.stopPropagation(); handleAction('add', { ...item, type }, contextList); }} title="Add to queue">+</button>
         </div>
       </div>
 
@@ -357,15 +405,7 @@ export function DeezerBrowser({ devices, deviceId }) {
             : html`
               ${type === 'artist' && entry.tracks?.length ? html`
                 <div style=${{ color:'#aaa', fontSize:'11px', fontWeight:600, letterSpacing:'.05em', padding:'4px 0 6px' }}>TOP 5</div>
-                ${entry.tracks.map((t, i) => html`
-                  <div key=${t.id} style=${{ display:'flex', alignItems:'center', gap:'8px', padding:'5px 8px',
-                                             background:'#252525', borderRadius:'4px', marginBottom:'4px' }}>
-                    <span style=${{ color:'#888', fontSize:'12px', width:'16px', textAlign:'right', flexShrink:0 }}>${i + 1}</span>
-                    <span style=${{ flex:1, color:'#fff', fontSize:'13px', overflowWrap:'anywhere', wordBreak:'break-word' }}>${t.title}</span>
-                    <button style=${S.play} onClick=${(e) => { e.stopPropagation(); handleAction('play', { ...t, type:'track' }, entry.tracks); }}>▶</button>
-                    <button style=${S.add}  onClick=${(e) => { e.stopPropagation(); handleAction('add',  { ...t, type:'track' }, entry.tracks); }}>+</button>
-                  </div>
-                `)}
+                ${entry.tracks.map((t, i) => renderTrackItem(t, i, entry.tracks))}
               ` : null}
               ${type === 'artist' && entry.albums?.length ? html`
                 <div style=${{ color:'#aaa', fontSize:'11px', fontWeight:600, letterSpacing:'.05em', padding:'10px 0 6px' }}>ALBUM</div>
@@ -375,15 +415,7 @@ export function DeezerBrowser({ devices, deviceId }) {
                 <div style=${{ color:'#aaa', fontSize:'11px', fontWeight:600, letterSpacing:'.05em', padding:'10px 0 6px' }}>ARTISTI CORRELATI</div>
                 ${entry.related.map(a => renderRelatedArtistRow(a))}
               ` : null}
-              ${type === 'album' ? entry.tracks.map((t, i) => html`
-                <div key=${t.id} style=${{ display:'flex', alignItems:'center', gap:'8px', padding:'5px 8px',
-                                           background:'#252525', borderRadius:'4px', marginBottom:'4px' }}>
-                  <span style=${{ color:'#888', fontSize:'12px', width:'16px', textAlign:'right', flexShrink:0 }}>${i + 1}</span>
-                  <span style=${{ flex:1, color:'#fff', fontSize:'13px', overflowWrap:'anywhere', wordBreak:'break-word' }}>${t.title}</span>
-                  <button style=${S.play} onClick=${(e) => { e.stopPropagation(); handleAction('play', { ...t, type:'track' }, entry.tracks); }}>▶</button>
-                  <button style=${S.add}  onClick=${(e) => { e.stopPropagation(); handleAction('add',  { ...t, type:'track' }, entry.tracks); }}>+</button>
-                </div>
-              `) : null}
+              ${type === 'album' ? entry.tracks.map((t, i) => renderTrackItem(t, i, entry.tracks)) : null}
             `}
         </div>
       ` : null}
@@ -446,15 +478,7 @@ export function DeezerBrowser({ devices, deviceId }) {
         <!-- top 5 -->
         ${tracks.length ? html`
           <div style=${{ color:'#aaa', fontSize:'11px', fontWeight:600, letterSpacing:'.05em', padding:'4px 0 8px' }}>TOP 5</div>
-          ${tracks.map((t, i) => html`
-            <div key=${t.id} style=${{ display:'flex', alignItems:'center', gap:'8px', padding:'6px 8px',
-                                       background:'#1e1e1e', borderRadius:'4px', marginBottom:'4px' }}>
-              <span style=${{ color:'#888', fontSize:'12px', width:'16px', textAlign:'right', flexShrink:0 }}>${i + 1}</span>
-              <span style=${{ flex:1, color:'#fff', fontSize:'13px', overflowWrap:'anywhere', wordBreak:'break-word' }}>${t.title}</span>
-              <button style=${S.play} onClick=${() => handleAction('play', { ...t, type:'track' }, tracks)}>▶</button>
-              <button style=${S.add}  onClick=${() => handleAction('add',  { ...t, type:'track' }, tracks)}>+</button>
-            </div>
-          `)}
+          ${tracks.map((t, i) => renderTrackItem(t, i, tracks, '#1e1e1e'))}
         ` : null}
 
         <!-- albums -->
