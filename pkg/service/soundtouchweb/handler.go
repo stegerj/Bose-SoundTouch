@@ -7,18 +7,20 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/gorilla/websocket"
 	"github.com/stegerj/bose-soundtouch/pkg/models"
 	bmxpkg "github.com/stegerj/bose-soundtouch/pkg/service/bmx"
 	"github.com/stegerj/bose-soundtouch/pkg/service/soundtouchweb/webtypes"
 	"github.com/stegerj/bose-soundtouch/pkg/service/stations"
-	"github.com/go-chi/chi/v5"
-	"github.com/gorilla/websocket"
 )
 
 // WebApp holds the application state and dependencies.
@@ -113,6 +115,18 @@ type DeviceEntry struct {
 
 // NewWebApp creates a new WebApp instance for SPA mode
 func NewWebApp() *WebApp {
+	// Initialize persistent queue storage directory
+	dataDir := os.Getenv("SOUNDTOUCH_DATA_DIR")
+	if dataDir == "" {
+		// Default to current directory if not set
+		dataDir = "."
+	}
+	queueDir := filepath.Join(dataDir, "deezer_queues")
+	bmxpkg.SetQueueDataDir(queueDir)
+
+	// Load auto-start settings from disk
+	bmxpkg.LoadAutoStart()
+
 	return &WebApp{
 		devices:   make(map[string]*webtypes.DeviceConnection),
 		WSClients: make(map[*websocket.Conn]bool),

@@ -137,6 +137,10 @@ func (app *WebApp) MountWeb(r chi.Router, discoveryService *discovery.UnifiedDis
 				//   POST   /queue/clear   — wipe upcoming / parked list (✕)
 				//   POST   /queue/remove  — remove upcoming[index]
 				//   POST   /play/album   — play album natively (bypasses queue)
+				//   POST   /play/track   — play track natively (bypasses queue)
+				//   POST   /play/artist  — play artist natively (bypasses queue)
+				//   POST   /queue/autostart — enable/disable auto-start when idle
+				//   GET    /queue/autostart — get auto-start state
 				r.Post("/devices/{id}/queue", app.HandleDeezerQueueReplace)
 				r.Post("/devices/{id}/queue/add", app.HandleDeezerQueueAdd)
 				r.Get("/devices/{id}/queue/status", app.HandleDeezerQueueStatus)
@@ -146,6 +150,10 @@ func (app *WebApp) MountWeb(r chi.Router, discoveryService *discovery.UnifiedDis
 				r.Post("/devices/{id}/queue/clear", app.HandleDeezerQueueClear)
 				r.Post("/devices/{id}/queue/remove", app.HandleDeezerQueueRemove)
 				r.Post("/devices/{id}/play/album", app.HandleDeezerPlayAlbum)
+				r.Post("/devices/{id}/play/track", app.HandleDeezerPlayTrack)
+				r.Post("/devices/{id}/play/artist", app.HandleDeezerPlayArtist)
+				r.Post("/devices/{id}/queue/autostart", app.HandleDeezerQueueAutoStart)
+				r.Get("/devices/{id}/queue/autostart", app.HandleDeezerQueueAutoStartGet)
 			})
 
 			r.Route("/radiobrowser", func(r chi.Router) {

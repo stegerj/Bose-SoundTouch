@@ -22,6 +22,7 @@ type QueueTrack struct {
 	Title    string `json:"title"`
 	Artist   string `json:"artist"`
 	CoverURL string `json:"cover_url"`
+	Duration int    `json:"duration"` // Track duration in seconds from Deezer
 }
 
 // Queue configuration constants.
@@ -76,6 +77,10 @@ var (
 
 	// Queue persistence
 	queueDataDir = ""
+
+	// Auto-start when device becomes idle
+	autoStartQueue = map[string]bool{}
+	autoStartMu    sync.Mutex
 )
 
 // SetQueueDataDir sets the directory for persistent queue storage.
@@ -153,6 +158,94 @@ func deleteQueue(deviceIP string) {
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		log.Printf("[deezer-queue] failed to delete queue for %s: %v", deviceIP, err)
 	}
+}
+
+// SetAutoStart enables or disables auto-start for a device's queue.
+// When enabled, the queue will automatically start when the device becomes idle.
+func SetAutoStart(deviceIP string, enabled bool) {
+	autoStartMu.Lock()
+	defer autoStartMu.Unlock()
+	if enabled {
+		autoStartQueue[deviceIP] = true
+	} else {
+		delete(autoStartQueue, deviceIP)
+	}
+	saveAutoStart()
+}
+
+// LoadAutoStart loads auto-start settings from disk.
+func LoadAutoStart() {
+	if queueDataDir == "" {
+		return
+	}
+	path := filepath.Join(queueDataDir, "autostart.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("[deezer-queue] failed to load autostart settings: %v", err)
+		}
+		return
+	}
+	var settings map[string]bool
+	if err := json.Unmarshal(data, &settings); err != nil {
+		log.Printf("[deezer-queue] failed to parse autostart settings: %v", err)
+		return
+	}
+	autoStartMu.Lock()
+	for ip, enabled := range settings {
+		if enabled {
+			autoStartQueue[ip] = true
+		}
+	}
+	autoStartMu.Unlock()
+}
+
+// saveAutoStart saves auto-start settings to disk.
+func saveAutoStart() {
+	if queueDataDir == "" {
+		return
+	}
+	autoStartMu.Lock()
+	settings := make(map[string]bool)
+	for ip, enabled := range autoStartQueue {
+		settings[ip] = enabled
+	}
+	autoStartMu.Unlock()
+
+	path := filepath.Join(queueDataDir, "autostart.json")
+	data, err := json.Marshal(settings)
+	if err != nil {
+		log.Printf("[deezer-queue] failed to marshal autostart settings: %v", err)
+		return
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		log.Printf("[deezer-queue] failed to save autostart settings: %v", err)
+	}
+}
+
+// GetAutoStart returns whether auto-start is enabled for a device.
+func GetAutoStart(deviceIP string) bool {
+	autoStartMu.Lock()
+	defer autoStartMu.Unlock()
+	return autoStartQueue[deviceIP]
+}
+
+// CheckAutoStart checks if auto-start should trigger for a device.
+// Returns true if auto-start is enabled and there are parked tracks.
+func CheckAutoStart(deviceIP string) bool {
+	autoStartMu.Lock()
+	enabled := autoStartQueue[deviceIP]
+	autoStartMu.Unlock()
+
+	if !enabled {
+		return false
+	}
+
+	parkedMu.Lock()
+	hasTracks := len(parkedTracks[deviceIP]) > 0
+	parkedMu.Unlock()
+
+	return hasTracks
 }
 
 // ── broadcaster ───────────────────────────────────────────────────────────────
@@ -235,8 +328,9 @@ func AppendQueue(deviceIP string, tracks []QueueTrack) {
 			parkedMu.Unlock()
 			saveQueue(deviceIP, parkedTracks[deviceIP])
 		} else {
+			// Don't auto-start when adding to queue - just park the tracks
+			parkedTracks[deviceIP] = tracks
 			parkedMu.Unlock()
-			startQueue(deviceIP, tracks)
 			saveQueue(deviceIP, tracks)
 		}
 	}
@@ -310,18 +404,29 @@ func RemoveFromQueue(deviceIP string, index int) error {
 	activeQueuesMu.Lock()
 	q, running := activeQueues[deviceIP]
 	activeQueuesMu.Unlock()
-	if !running {
-		return fmt.Errorf("no active queue")
-	}
 
-	q.mu.Lock()
-	upcoming := q.tracks[1:]
-	if index < 0 || index >= len(upcoming) {
+	if running {
+		// Remove from active queue
+		q.mu.Lock()
+		upcoming := q.tracks[1:]
+		if index < 0 || index >= len(upcoming) {
+			q.mu.Unlock()
+			return fmt.Errorf("index out of range")
+		}
+		q.tracks = append(q.tracks[:1+index], q.tracks[2+index:]...)
 		q.mu.Unlock()
-		return fmt.Errorf("index out of range")
+	} else {
+		// Remove from parked queue
+		parkedMu.Lock()
+		parked := parkedTracks[deviceIP]
+		if index < 0 || index >= len(parked) {
+			parkedMu.Unlock()
+			return fmt.Errorf("index out of range")
+		}
+		parkedTracks[deviceIP] = append(parked[:index], parked[index+1:]...)
+		saveQueue(deviceIP, parkedTracks[deviceIP])
+		parkedMu.Unlock()
 	}
-	q.tracks = append(q.tracks[:1+index], q.tracks[2+index:]...)
-	q.mu.Unlock()
 
 	notifyQueueChange(deviceIP)
 	return nil
@@ -504,7 +609,13 @@ func (q *Queue) tracksLen() int {
 func (q *Queue) trackEndStateMachine(track QueueTrack, trackID string, eventChan <-chan nowPlayingEvent, timeout time.Duration) bool {
 	playConfirmed := false
 
-	hardDeadline := time.NewTimer(hardTimeout)
+	// Use track duration from Deezer to set a more appropriate hard timeout
+	// If duration is available, use duration + 30s buffer; otherwise use default
+	hardTimeoutDuration := hardTimeout
+	if track.Duration > 0 {
+		hardTimeoutDuration = time.Duration(track.Duration)*time.Second + 30*time.Second
+	}
+	hardDeadline := time.NewTimer(hardTimeoutDuration)
 	defer hardDeadline.Stop()
 
 	noPlayTimer := time.NewTimer(timeout)
@@ -639,10 +750,20 @@ func (q *Queue) waitForTrackEnd(track QueueTrack, wsOK bool) bool {
 // Polls the device REST endpoint at regular intervals with simplified
 // state machine semantics: ignore STOP until PLAY has been seen at least once.
 func (q *Queue) pollForTrackEnd() bool {
+	q.mu.Lock()
+	track := q.tracks[0]
+	q.mu.Unlock()
+
 	playConfirmed := false
 	start := time.Now()
 
-	deadline := time.NewTimer(hardTimeout)
+	// Use track duration from Deezer to set a more appropriate hard timeout
+	// If duration is available, use duration + 30s buffer; otherwise use default
+	hardTimeoutDuration := hardTimeout
+	if track.Duration > 0 {
+		hardTimeoutDuration = time.Duration(track.Duration)*time.Second + 30*time.Second
+	}
+	deadline := time.NewTimer(hardTimeoutDuration)
 	defer deadline.Stop()
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()

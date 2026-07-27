@@ -122,4 +122,22 @@ export const api = {
         headers: JSON_HEADERS,
         body: JSON.stringify({ albumId, name }),
     }),
+    deezerPlayTrack: (deviceId, trackId, title, artist) => req(`/api/control/providers/deezer/devices/${deviceId}/play/track`, {
+        method: 'POST',
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ trackId, title, artist }),
+    }),
+    deezerPlayArtist: (deviceId, artistId, name) => req(`/api/control/providers/deezer/devices/${deviceId}/play/artist`, {
+        method: 'POST',
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ artistId, name }),
+    }),
+    deezerQueueAutoStart: (deviceId, enabled) => req(`/api/control/providers/deezer/devices/${deviceId}/queue/autostart`, {
+        method: 'POST',
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ enabled }),
+    }),
+    deezerQueueAutoStartGet: (deviceId) => req(`/api/control/providers/deezer/devices/${deviceId}/queue/autostart`, {
+        method: 'GET',
+    }),
 };

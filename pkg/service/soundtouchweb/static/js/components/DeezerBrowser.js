@@ -42,15 +42,16 @@ const SUCCESS_TIMEOUT = 2500;
 
 // Normalises any track-like object into the canonical shape.
 // Ensures BOTH cover_url and imageUrl are set to fix the search/track rendering bug.
-function normTrack({ id, title, name, artist, subtitle, imageUrl, cover_url }) {
+function normTrack({ id, title, name, artist, subtitle, imageUrl, cover_url, duration }) {
   const finalId = id ? Number(id) : 0;
   const imageSource = imageUrl || cover_url || '';
   return {
     id:        Number.isNaN(finalId) ? 0 : finalId,
-    title:     title || name || 'Traccia sconosciuta',
-    artist:    artist || subtitle || 'Artista sconosciuto',
+    title:     title || name || 'Unknown track',
+    artist:    artist || subtitle || 'Unknown artist',
     cover_url: imageSource,
     imageUrl:  imageSource, // Fallback for components scanning this property specifically
+    duration:  duration ? Number(duration) : 0, // Track duration in seconds from Deezer
   };
 }
 
@@ -71,7 +72,7 @@ async function fetchArtistData(artist) {
     })),
     related: (Array.isArray(relatedRes?.data) ? relatedRes.data : []).map(a => ({
       id: a.id, name: a.name || '',
-      subtitle: a.nb_album != null ? `${a.nb_album} album` : 'Artista',
+      subtitle: a.nb_album != null ? `${a.nb_album} album` : 'Artist',
       imageUrl: a.picture_medium || a.picture_small || '', type: 'artist',
     })),
   };
@@ -136,7 +137,7 @@ export function DeezerBrowser({ devices, deviceId }) {
       setArtistPage({ artist, tracks: top5, albums, related, loading: false });
     } catch (err) {
       console.error('[artist page]', err);
-      setStatus("Errore nel caricamento dell'artista.");
+      setStatus("Error loading artist.");
       setTimeout(() => setStatus(''), STATUS_TIMEOUT);
       goBack();
     }
@@ -176,7 +177,7 @@ export function DeezerBrowser({ devices, deviceId }) {
       }
     } catch (err) {
       console.error('[toggle expand]', err);
-      setStatus('Errore nel caricamento dei dettagli.');
+      setStatus('Error loading details.');
       setTimeout(() => setStatus(''), STATUS_TIMEOUT);
       setExpanded(p => {
         const { [key]: _, ...rest } = p;
@@ -189,7 +190,7 @@ export function DeezerBrowser({ devices, deviceId }) {
     const res = await api.deezerAlbumTracks(albumItem.id);
     return (res?.data || []).map(t => normTrack({
       id: t.id, title: t.title,
-      artist:    albumItem.subtitle || albumItem.artist || 'Artista',
+      artist:    albumItem.subtitle || albumItem.artist || 'Artist',
       album:     albumItem.name     || albumItem.title  || '',
       cover_url: albumItem.imageUrl || albumItem.cover_url || '',
     }));
@@ -203,23 +204,56 @@ export function DeezerBrowser({ devices, deviceId }) {
     const devId = resolvedDeviceId;
     let tracks  = [];
 
-    // Native album play mode: bypass queue for better preset support
-    if (action === 'play' && type === 'album') {
-      setLoading(true);
-      try {
-        await api.deezerPlayAlbum(devId, item.id, item.name || item.title);
-        setStatus(`Album in riproduzione: ${item.name || item.title}`);
-        setTimeout(() => setStatus(''), SUCCESS_TIMEOUT);
-      } catch (e) {
-        console.error('[play album]', e);
-        setStatus(`Errore: ${e.message || "Impossibile riprodurre l'album"}`);
-        setTimeout(() => setStatus(''), STATUS_TIMEOUT);
-      } finally {
-        setLoading(false);
+    // Native play modes: bypass queue for better preset support
+    if (action === 'play') {
+      if (type === 'album') {
+        setLoading(true);
+        try {
+          await api.deezerPlayAlbum(devId, item.id, item.name || item.title);
+          setStatus(`Playing album: ${item.name || item.title}`);
+          setTimeout(() => setStatus(''), SUCCESS_TIMEOUT);
+        } catch (e) {
+          console.error('[play album]', e);
+          setStatus(`Error: ${e.message || "Cannot play album"}`);
+          setTimeout(() => setStatus(''), STATUS_TIMEOUT);
+        } finally {
+          setLoading(false);
+        }
+        return;
       }
-      return;
+      if (type === 'track') {
+        setLoading(true);
+        try {
+          await api.deezerPlayTrack(devId, item.id, item.title, item.artist);
+          setStatus(`Playing: ${item.title}`);
+          setTimeout(() => setStatus(''), SUCCESS_TIMEOUT);
+        } catch (e) {
+          console.error('[play track]', e);
+          setStatus(`Error: ${e.message || "Cannot play track"}`);
+          setTimeout(() => setStatus(''), STATUS_TIMEOUT);
+        } finally {
+          setLoading(false);
+        }
+        return;
+      }
+      if (type === 'artist') {
+        setLoading(true);
+        try {
+          await api.deezerPlayArtist(devId, item.id, item.name);
+          setStatus(`Playing: ${item.name}`);
+          setTimeout(() => setStatus(''), SUCCESS_TIMEOUT);
+        } catch (e) {
+          console.error('[play artist]', e);
+          setStatus(`Error: ${e.message || "Cannot play artist"}`);
+          setTimeout(() => setStatus(''), STATUS_TIMEOUT);
+        } finally {
+          setLoading(false);
+        }
+        return;
+      }
     }
 
+    // Add to queue: fetch tracks and add to queue
     if (type === 'track') {
       tracks = [normTrack(item)];
     } else if (type === 'album') {
@@ -227,7 +261,7 @@ export function DeezerBrowser({ devices, deviceId }) {
       try   { tracks = await fetchAlbumTracks(item); }
       catch (e) {
         console.error('[handle action album]', e);
-        setStatus('Impossibile caricare le tracce.');
+        setStatus('Cannot load tracks.');
         setTimeout(() => setStatus(''), STATUS_TIMEOUT);
         setLoading(false);
         return;
@@ -243,7 +277,7 @@ export function DeezerBrowser({ devices, deviceId }) {
         }));
       } catch (e) {
         console.error('[handle action artist]', e);
-        setStatus('Impossibile caricare la tracklist.');
+        setStatus('Cannot load tracklist.');
         setTimeout(() => setStatus(''), STATUS_TIMEOUT);
         setLoading(false);
         return;
@@ -252,7 +286,7 @@ export function DeezerBrowser({ devices, deviceId }) {
     }
 
     if (!tracks.length) {
-      setStatus('Nessuna traccia valida.');
+      setStatus('No valid tracks.');
       setTimeout(() => setStatus(''), STATUS_TIMEOUT);
       return;
     }
@@ -265,33 +299,21 @@ export function DeezerBrowser({ devices, deviceId }) {
     const { action, item, tracks } = task;
     setLoading(true);
     try {
-      if (action === 'play') {
-        await api.deezerQueueReplace(devId, tracks);
-        const trackCount = tracks.length;
-        const itemName = item.name || item.title;
-        if (item.type === 'artist') {
-          setStatus(`Playing ${trackCount} tracks by ${itemName}`);
-        } else if (item.type === 'album') {
-          setStatus(`Playing ${trackCount} tracks from ${itemName}`);
-        } else {
-          setStatus(`Playing: ${itemName}`);
-        }
+      // Only add to queue - play actions now use native endpoints
+      await api.deezerQueueAdd(devId, tracks);
+      const trackCount = tracks.length;
+      const itemName = item.name || item.title;
+      if (item.type === 'artist') {
+        setStatus(`Added ${trackCount} tracks by ${itemName} to queue`);
+      } else if (item.type === 'album') {
+        setStatus(`Added ${trackCount} tracks from ${itemName} to queue`);
       } else {
-        await api.deezerQueueAdd(devId, tracks);
-        const trackCount = tracks.length;
-        const itemName = item.name || item.title;
-        if (item.type === 'artist') {
-          setStatus(`Added ${trackCount} tracks by ${itemName} to queue`);
-        } else if (item.type === 'album') {
-          setStatus(`Added ${trackCount} tracks from ${itemName} to queue`);
-        } else {
-          setStatus(`Added ${itemName} to queue`);
-        }
+        setStatus(`Added ${itemName} to queue`);
       }
       setTimeout(() => setStatus(''), SUCCESS_TIMEOUT);
     } catch (err) {
       console.error('[execute task]', err);
-      setStatus(`Errore: ${err.message || "Impossibile completare l'azione"}`);
+      setStatus(`Error: ${err.message || "Cannot complete action"}`);
       setTimeout(() => setStatus(''), STATUS_TIMEOUT);
     } finally {
       setLoading(false);
@@ -311,21 +333,21 @@ export function DeezerBrowser({ devices, deviceId }) {
 
   async function search(q, type) {
     if (!q?.trim()) return;
-    setLoading(true); setStatus('Ricerca su Deezer...'); setSections([]); setExpanded({});
+    setLoading(true); setStatus('Searching Deezer...'); setSections([]); setExpanded({});
     setArtistPage(null); setArtistHistory([]);
     try {
       const res  = await api.deezerSearch(q, type);
       const list = res?.data;
       if (!Array.isArray(list) || !list.length) {
-        setStatus('Nessun risultato.');
+        setStatus('No results.');
         setTimeout(() => setStatus(''), STATUS_TIMEOUT);
         return;
       }
-      setStatus(`${list.length} risultati:`);
-      setSections([{ name: `${type[0].toUpperCase() + type.slice(1)} Risultati`, items: mapItems(list, type) }]);
+      setStatus(`${list.length} results:`);
+      setSections([{ name: `${type[0].toUpperCase() + type.slice(1)} Results`, items: mapItems(list, type) }]);
     } catch (e) {
       console.error('[search]', e);
-      setStatus('Errore nella ricerca.');
+      setStatus('Search error.');
       setTimeout(() => setStatus(''), STATUS_TIMEOUT);
     }
     finally     { setLoading(false); }
@@ -348,7 +370,7 @@ export function DeezerBrowser({ devices, deviceId }) {
         };
         return {
           id: item.id, type: 'artist',
-          name: item.name || '', subtitle: item.nb_album != null ? `${item.nb_album} Album` : 'Artista',
+          name: item.name || '', subtitle: item.nb_album != null ? `${item.nb_album} Album` : 'Artist',
           imageUrl: item.picture_medium || item.picture_small || '',
         };
       });
@@ -401,7 +423,7 @@ export function DeezerBrowser({ devices, deviceId }) {
         <div style=${{ marginLeft:`${depth * 24 + 20}px`, borderLeft:'2px solid #333',
                        paddingLeft:'10px', marginTop:'4px', marginBottom:'8px' }}>
           ${entry.loading
-            ? html`<div style=${{ color:'#888', padding:'8px', fontSize:'13px' }}>Caricamento...</div>`
+            ? html`<div style=${{ color:'#888', padding:'8px', fontSize:'13px' }}>Loading...</div>`
             : html`
               ${type === 'artist' && entry.tracks?.length ? html`
                 <div style=${{ color:'#aaa', fontSize:'11px', fontWeight:600, letterSpacing:'.05em', padding:'4px 0 6px' }}>TOP 5</div>
@@ -412,7 +434,7 @@ export function DeezerBrowser({ devices, deviceId }) {
                 ${entry.albums.map(a => renderRow(a, entry.albums, depth + 1))}
               ` : null}
               ${type === 'artist' && entry.related?.length ? html`
-                <div style=${{ color:'#aaa', fontSize:'11px', fontWeight:600, letterSpacing:'.05em', padding:'10px 0 6px' }}>ARTISTI CORRELATI</div>
+                <div style=${{ color:'#aaa', fontSize:'11px', fontWeight:600, letterSpacing:'.05em', padding:'10px 0 6px' }}>RELATED ARTISTS</div>
                 ${entry.related.map(a => renderRelatedArtistRow(a))}
               ` : null}
               ${type === 'album' ? entry.tracks.map((t, i) => renderTrackItem(t, i, entry.tracks)) : null}
@@ -437,7 +459,7 @@ export function DeezerBrowser({ devices, deviceId }) {
         <button style=${S.play} onClick=${(e) => { e.stopPropagation(); handleAction('play', { ...artist, type:'artist' }, []); }}>▶</button>
         <button style=${S.add}  onClick=${(e) => { e.stopPropagation(); handleAction('add',  { ...artist, type:'artist' }, []); }}>+</button>
         <button style=${{ ...S.expand, background:'#2a2a2a', color:'#888', fontSize:'16px', padding:'2px 8px' }}
-                title="Apri artista" onClick=${() => showArtistPage(artist)}>›</button>
+                title="Open artist" onClick=${() => showArtistPage(artist)}>›</button>
       </div>
     `;
   }
@@ -449,7 +471,7 @@ export function DeezerBrowser({ devices, deviceId }) {
       <div>
         <!-- breadcrumb / back -->
         <div style=${{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'14px' }}>
-          <button style=${{ ...S.pillBtn, background:'#333' }} onClick=${goBack}>← Indietro</button>
+          <button style=${{ ...S.pillBtn, background:'#333' }} onClick=${goBack}>← Back</button>
           ${artistHistory.length > 0 ? html`
             <span style=${{ color:'#666', fontSize:'12px' }}>
               ${artistHistory.map(e => e.artist.name).join(' › ')} ›
@@ -470,7 +492,7 @@ export function DeezerBrowser({ devices, deviceId }) {
           <button style=${{ ...S.play, padding:'8px 16px' }}
                   onClick=${() => handleAction('play', { ...artist, type:'artist' }, [])}>▶ Top 50</button>
           <button style=${{ ...S.add, padding:'8px 16px' }}
-                  onClick=${() => handleAction('add', { ...artist, type:'artist' }, [])}>+ Coda</button>
+                  onClick=${() => handleAction('add', { ...artist, type:'artist' }, [])}>+ Queue</button>
         </div>
 
         ${pageLoading ? html`<div class="loading-bar" style=${{ height:'3px', background:'#007aff', width:'100%', marginBottom:'12px' }}></div>` : null}
@@ -491,7 +513,7 @@ export function DeezerBrowser({ devices, deviceId }) {
 
         <!-- related artists -->
         ${related.length ? html`
-          <div style=${{ color:'#aaa', fontSize:'11px', fontWeight:600, letterSpacing:'.05em', padding:'12px 0 8px' }}>ARTISTI CORRELATI</div>
+          <div style=${{ color:'#aaa', fontSize:'11px', fontWeight:600, letterSpacing:'.05em', padding:'12px 0 8px' }}>RELATED ARTISTS</div>
           ${related.map(a => renderRelatedArtistRow(a))}
         ` : null}
       </div>
@@ -508,22 +530,22 @@ export function DeezerBrowser({ devices, deviceId }) {
         <select style=${{ padding:'0 8px', height:'36px', borderRadius:'4px', background:'#333', color:'#fff', border:'none' }}
                 value=${searchType} onChange=${(e) => setSearchType(e.target.value)}>
           <option value="album">Album</option>
-          <option value="artist">Artisti</option>
-          <option value="track">Tracce</option>
+          <option value="artist">Artist</option>
+          <option value="track">Track</option>
         </select>
         <input class="tunein-search-input"
           style=${{ flex:1, padding:'0 12px', height:'36px', borderRadius:'4px', background:'#222', color:'#fff', border:'1px solid #444' }}
-          placeholder="Cerca su Deezer..." value=${query}
+          placeholder="Search Deezer..." value=${query}
           onInput=${(e) => setQuery(e.target.value)}
           onKeyDown=${(e) => e.key === 'Enter' && search(query, searchType)} />
         <button style=${{ ...S.pillBtn, background:'#007aff', height:'36px', padding:'0 16px' }}
-                onClick=${() => search(query, searchType)}>Cerca</button>
+                onClick=${() => search(query, searchType)}>Search</button>
         <button style=${{ ...S.pillBtn, background:'#444', height:'36px', padding:'0 16px' }}
                 onClick=${() => { setQuery(''); setStatus(''); setSections([]); setExpanded({});
-                                  setArtistPage(null); setArtistHistory([]); }}>Svuota</button>
+                                  setArtistPage(null); setArtistHistory([]); }}>Clear</button>
       </div>
 
-      ${status  ? html`<div style=${{ color:'#aaa', fontSize:'13px', marginBottom:'8px' }}>${status}</div>` : null}
+      <div style=${{ color:'#aaa', fontSize:'13px', marginBottom:'8px', minHeight:'20px' }}>${status || ''}</div>
       ${loading ? html`<div class="loading-bar" style=${{ height:'3px', background:'#007aff', width:'100%', marginBottom:'12px' }}></div>` : null}
 
       <!-- queue panel -->
@@ -532,17 +554,17 @@ export function DeezerBrowser({ devices, deviceId }) {
           <span style=${{ color:'#fff', fontWeight:600, fontSize:'14px', cursor:'pointer', userSelect:'none' }}
                 onClick=${() => setQueueOpen(o => !o)}>
             ${queueOpen ? '▾' : '▸'}
-            ${' '}${queue.playing ? '▶ In coda' : queue.paused ? '⏸ In pausa' : 'Coda'}
-            ${queue.upcoming.length ? html` <span style=${{ color:'#666', fontWeight:400 }}>· ${queue.upcoming.length} in attesa</span>` : null}
+            ${' '}${queue.playing ? '▶ In queue' : queue.paused ? '⏸ Paused' : 'Queue'}
+            ${queue.upcoming.length ? html` <span style=${{ color:'#666', fontWeight:400 }}>· ${queue.upcoming.length} waiting</span>` : null}
             ${!queueOpen && queue.current ? html` <span style=${{ color:'#34c759', fontWeight:400, fontSize:'12px' }}> — ${queue.current.title}</span>` : null}
           </span>
           <div style=${{ display:'flex', gap:'6px' }}>
             <button style=${{ ...S.pillBtn, background: queue.paused ? '#34c759' : '#3a3a3a',
                               opacity: queue.paused ? 1 : 0.35, cursor: queue.paused ? 'pointer' : 'default' }}
-                    disabled=${!queue.paused} onClick=${playQueue} title="Riprendi">▶ Play</button>
+                    disabled=${!queue.paused} onClick=${playQueue} title="Resume">▶ Play</button>
             <button style=${{ ...S.pillBtn, background: queue.playing ? '#e05252' : '#3a3a3a',
                               opacity: queue.playing ? 1 : 0.35, cursor: queue.playing ? 'pointer' : 'default' }}
-                    disabled=${!queue.playing} onClick=${stopQueue} title="Ferma">■ Stop</button>
+                    disabled=${!queue.playing} onClick=${stopQueue} title="Stop">■ Stop</button>
             <button style=${{ ...S.pillBtn, background: (queue.playing && queue.upcoming.length > 0) ? '#f0a030' : '#3a3a3a',
                               opacity: (queue.playing && queue.upcoming.length > 0) ? 1 : 0.35,
                               cursor: (queue.playing && queue.upcoming.length > 0) ? 'pointer' : 'default' }}
@@ -560,13 +582,13 @@ export function DeezerBrowser({ devices, deviceId }) {
                            borderRadius:'6px', marginBottom: queue.upcoming.length ? '8px' : '0', border:'1px solid #3a3a3a' }}>
               ${queue.current.cover_url ? html`<img src=${queue.current.cover_url} style=${{ width:'40px', height:'40px', borderRadius:'4px', objectFit:'cover' }} />` : null}
               <div style=${{ flex:1, minWidth:0 }}>
-                <div style=${{ color:'#34c759', fontSize:'11px', fontWeight:600, marginBottom:'2px' }}>▶ IN RIPRODUZIONE</div>
+                <div style=${{ color:'#34c759', fontSize:'11px', fontWeight:600, marginBottom:'2px' }}>▶ NOW PLAYING</div>
                 <div style=${{ color:'#fff', fontSize:'14px', fontWeight:500, overflowWrap:'anywhere', wordBreak:'break-word' }}>${queue.current.title}</div>
                 <div style=${{ color:'#888', fontSize:'12px' }}>${queue.current.artist}</div>
               </div>
             </div>
           ` : !queue.playing && !queue.paused ? html`
-            <div style=${{ color:'#555', fontSize:'13px' }}>Nessuna traccia in coda — usa ▶ o + dai risultati.</div>
+            <div style=${{ color:'#555', fontSize:'13px' }}>No tracks in queue — use + from results.</div>
           ` : null}
 
           ${queue.upcoming.map((t, i) => html`

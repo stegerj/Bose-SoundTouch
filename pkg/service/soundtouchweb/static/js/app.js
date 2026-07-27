@@ -207,9 +207,7 @@ function App() {
                         onClick=${(e) => { e.preventDefault(); navigate('deezer'); }}
                         title="Deezer"
                     >
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                            <path d="M18.81 11.157H24v2.228h-5.19zM18.81 7.826H24v2.228h-5.19zM18.81 14.49H24v2.228h-5.19zM12.404 14.49h5.19v2.228h-5.19zM6 14.49h5.19v2.228H6zM0 14.49h5.19v2.228H0zM12.404 11.157h5.19v2.228h-5.19z"/>
-                        </svg>
+                        <img src="/app/static/img/Heart-icon.png" alt="Deezer" class="nav-deezer-icon" />
                     </a>
                     <a href="#" class="${page === 'playurl' ? 'active' : ''}"
                         onClick=${(e) => { e.preventDefault(); navigate('playurl'); }}

@@ -57,8 +57,8 @@ export function DeezerQueueView({ deviceId, queueState, onQueueUpdated }) {
     if (!hasContent) {
         return html`
             <div class="deezer-queue-section empty" style=${S.container}>
-                <h3 style=${S.title}>Coda Deezer</h3>
-                <p style=${S.emptyText}>La coda è vuota. Usa "Aggiungi alla coda" mentre esplori tracce o album.</p>
+                <h3 style=${S.title}>Deezer Warteschlange</h3>
+                <p style=${S.emptyText}>The queue is empty. Use "Add to queue" while browsing tracks or albums.</p>
             </div>
         `;
     }
@@ -69,8 +69,8 @@ export function DeezerQueueView({ deviceId, queueState, onQueueUpdated }) {
                 <div style=${S.section}>
                     <div class="queue-header" style=${S.header}>
                         <div>
-                            <h3 style=${S.title}>In riproduzione</h3>
-                            <p style=${S.subtitle}>1 brano</p>
+                            <h3 style=${S.title}>Now Playing</h3>
+                            <p style=${S.subtitle}>1 track</p>
                         </div>
                     </div>
                     <div class="queue-list" style=${{ ...S.list, maxHeight: 'none' }}>
@@ -92,11 +92,11 @@ export function DeezerQueueView({ deviceId, queueState, onQueueUpdated }) {
                 <div style=${S.section}>
                     <div class="queue-header" style=${S.header}>
                         <div>
-                            <h3 style=${S.title}>Prossimi brani</h3>
-                            <p style=${S.subtitle}>${local_queue.length} brani in coda</p>
+                            <h3 style=${S.title}>Upcoming tracks</h3>
+                            <p style=${S.subtitle}>${local_queue.length} tracks in queue</p>
                         </div>
                         <button class="btn-stop-queue" onClick=${handleStopQueue} style=${S.stopBtn}>
-                            Ferma e Svuota
+                            Stop & Clear
                         </button>
                     </div>
                     <div class="queue-list" style=${S.list}>
@@ -109,7 +109,7 @@ export function DeezerQueueView({ deviceId, queueState, onQueueUpdated }) {
                                         <span class="queue-artist" style=${S.trackArtist}>${track.artist}</span>
                                     </div>
                                 </div>
-                                <button class="btn-remove-queue" onClick=${() => handleRemove(index)} title="Rimuovi traccia" style=${S.removeBtn}>
+                                <button class="btn-remove-queue" onClick=${() => handleRemove(index)} title="Remove track" style=${S.removeBtn}>
                                     ✕
                                 </button>
                             </div>

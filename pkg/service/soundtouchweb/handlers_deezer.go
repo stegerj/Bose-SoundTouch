@@ -255,7 +255,7 @@ func (app *WebApp) HandleDeezerPlayAlbum(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Stop any existing queue playback for this device
+	// Stop any existing queue playback for this device before playing new content
 	bmxpkg.StopQueue(device.DeviceInfo.IPAddress)
 
 	// Play album natively using the speaker's Deezer integration
@@ -273,6 +273,135 @@ func (app *WebApp) HandleDeezerPlayAlbum(w http.ResponseWriter, r *http.Request)
 	}
 
 	sendSuccessJSON(w, map[string]interface{}{"success": true})
+}
+
+// HandleDeezerPlayTrack plays a single track directly (bypasses queue).
+func (app *WebApp) HandleDeezerPlayTrack(w http.ResponseWriter, r *http.Request) {
+	device, exists := app.GetDevice(chi.URLParam(r, "id"))
+	if !exists {
+		app.sendError(w, "Device not found", http.StatusNotFound)
+		return
+	}
+	defer r.Body.Close()
+
+	var req struct {
+		TrackID int    `json:"trackId"`
+		Title   string `json:"title"`
+		Artist  string `json:"artist"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		app.sendError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.TrackID == 0 {
+		app.sendError(w, "trackId is required", http.StatusBadRequest)
+		return
+	}
+
+	if device.Client == nil {
+		app.sendError(w, "Device client not available", http.StatusInternalServerError)
+		return
+	}
+
+	// Stop any existing queue playback for this device before playing new content
+	bmxpkg.StopQueue(device.DeviceInfo.IPAddress)
+
+	// Play track directly using the speaker's Deezer integration
+	err := device.Client.SelectContentItem(&models.ContentItem{
+		Source:        "DEEZER",
+		Type:          "track",
+		Location:      fmt.Sprintf("%d", req.TrackID),
+		ItemName:      fmt.Sprintf("%s — %s", req.Title, req.Artist),
+		SourceAccount: bmxpkg.DeezerSourceAccount(device.DeviceInfo.IPAddress),
+		IsPresetable:  true,
+	})
+	if err != nil {
+		app.sendError(w, fmt.Sprintf("Failed to play track: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	sendSuccessJSON(w, map[string]interface{}{"success": true})
+}
+
+// HandleDeezerPlayArtist plays an artist's top tracks directly (bypasses queue).
+func (app *WebApp) HandleDeezerPlayArtist(w http.ResponseWriter, r *http.Request) {
+	device, exists := app.GetDevice(chi.URLParam(r, "id"))
+	if !exists {
+		app.sendError(w, "Device not found", http.StatusNotFound)
+		return
+	}
+	defer r.Body.Close()
+
+	var req struct {
+		ArtistID int    `json:"artistId"`
+		Name     string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		app.sendError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.ArtistID == 0 {
+		app.sendError(w, "artistId is required", http.StatusBadRequest)
+		return
+	}
+
+	if device.Client == nil {
+		app.sendError(w, "Device client not available", http.StatusInternalServerError)
+		return
+	}
+
+	// Stop any existing queue playback for this device before playing new content
+	bmxpkg.StopQueue(device.DeviceInfo.IPAddress)
+
+	// Play artist directly using the speaker's Deezer integration
+	err := device.Client.SelectContentItem(&models.ContentItem{
+		Source:        "DEEZER",
+		Type:          "artist",
+		Location:      fmt.Sprintf("%d", req.ArtistID),
+		ItemName:      req.Name,
+		SourceAccount: bmxpkg.DeezerSourceAccount(device.DeviceInfo.IPAddress),
+		IsPresetable:  true,
+	})
+	if err != nil {
+		app.sendError(w, fmt.Sprintf("Failed to play artist: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	sendSuccessJSON(w, map[string]interface{}{"success": true})
+}
+
+// HandleDeezerQueueAutoStart enables or disables auto-start for the queue.
+// When enabled, the queue will automatically start when the device becomes idle.
+func (app *WebApp) HandleDeezerQueueAutoStart(w http.ResponseWriter, r *http.Request) {
+	device, exists := app.GetDevice(chi.URLParam(r, "id"))
+	if !exists {
+		app.sendError(w, "Device not found", http.StatusNotFound)
+		return
+	}
+	defer r.Body.Close()
+
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		app.sendError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	bmxpkg.SetAutoStart(device.DeviceInfo.IPAddress, req.Enabled)
+	sendSuccessJSON(w, map[string]interface{}{"success": true, "enabled": req.Enabled})
+}
+
+// HandleDeezerQueueAutoStartGet returns the current auto-start state for a device.
+func (app *WebApp) HandleDeezerQueueAutoStartGet(w http.ResponseWriter, r *http.Request) {
+	device, exists := app.GetDevice(chi.URLParam(r, "id"))
+	if !exists {
+		app.sendError(w, "Device not found", http.StatusNotFound)
+		return
+	}
+
+	enabled := bmxpkg.GetAutoStart(device.DeviceInfo.IPAddress)
+	sendSuccessJSON(w, map[string]interface{}{"success": true, "enabled": enabled})
 }
 
 // HandleDeezerArtistDetails returns the full album list and top tracks for an artist.
