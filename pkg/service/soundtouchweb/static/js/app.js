@@ -207,7 +207,7 @@ function App() {
                         onClick=${(e) => { e.preventDefault(); navigate('deezer'); }}
                         title="Deezer"
                     >
-                        <img src="/app/static/img/Heart-icon.png" alt="Deezer" class="nav-deezer-icon" />
+                        <img src="/app/static/img/Heart Icon black.png" alt="Deezer" class="nav-deezer-icon" />
                     </a>
                     <a href="#" class="${page === 'playurl' ? 'active' : ''}"
                         onClick=${(e) => { e.preventDefault(); navigate('playurl'); }}

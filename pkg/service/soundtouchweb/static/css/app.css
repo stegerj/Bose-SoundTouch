@@ -238,8 +238,6 @@ img { display: block; max-width: 100%; }
 .nav-links a.active .nav-deezer-icon {
     filter: none;
     opacity: 1;
-    border-radius: 4px;
-    box-shadow: 0 0 0 1px var(--accent-fg);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -255,9 +253,7 @@ img { display: block; max-width: 100%; }
         filter: invert(1);
     }
     .nav-links a.active .nav-deezer-icon {
-        filter: invert(1);
-        border-radius: 4px;
-        box-shadow: 0 0 0 1px var(--text);
+        filter: none;
     }
 }
 
